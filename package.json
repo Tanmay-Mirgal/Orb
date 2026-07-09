@@ -1,0 +1,17 @@
+{
+  "name": "orb",
+  "version": "1.0.0",
+  "description": "Orb Platform Monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

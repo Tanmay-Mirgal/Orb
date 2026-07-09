@@ -1,0 +1,265 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { GitBranch, Search, Lock, Globe, Plus, Box } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+
+type Repo = {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  language: string;
+  updated_at: string;
+};
+
+export default function NewProjectPage() {
+  const router = useRouter();
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+  const [projectType, setProjectType] = useState<"static" | "web" | null>(null);
+  
+  // Form State
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [framework, setFramework] = useState("Next.js");
+  const [outputDir, setOutputDir] = useState(".next");
+  const [buildCmd, setBuildCmd] = useState("npm run build");
+
+  useEffect(() => {
+    // Only fetch if a project type was selected
+    if (!projectType) return;
+    
+    setLoading(true);
+    fetch("/api/github/repos")
+      .then(res => res.json())
+      .then(data => {
+        if (data.repos) {
+          setRepos(data.repos);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [projectType]);
+
+  const filteredRepos = repos.filter(repo => repo.name.toLowerCase().includes(search.toLowerCase()));
+
+  const handleDeploy = async () => {
+    if (!selectedRepo) return;
+    setIsDeploying(true);
+    
+    try {
+      // 1. Create Project
+      const projectRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedRepo.name,
+          githubRepositoryName: selectedRepo.full_name,
+          githubRepositoryId: selectedRepo.id,
+          branch: "main",
+          framework: framework,
+          buildCommand: buildCmd,
+          outputDirectory: outputDir,
+        })
+      });
+      const projectData = await projectRes.json();
+      
+      if (!projectData.success) {
+        throw new Error(projectData.error || "Failed to create project");
+      }
+
+      // 2. Trigger Deployment via API
+      const res = await fetch("/api/deployments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: projectData.project.id,
+          githubRepositoryName: selectedRepo.full_name,
+          branch: "main",
+          buildCommand: buildCmd,
+          outputDirectory: outputDir,
+        })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        const slug = projectData.project.name;
+        router.push(`/dashboard/projects/${slug}`);
+      }
+    } catch (error) {
+      console.error(error);
+      setIsDeploying(false);
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto p-6 md:p-12 space-y-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">Import Git Repository</h1>
+        <p className="text-muted-foreground">Select a project type and then a repository from your GitHub account.</p>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {!projectType ? (
+          <motion.div
+            key="type-selection"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+          >
+            <Card className="cursor-pointer hover:border-foreground transition-colors group" onClick={() => setProjectType("static")}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  Static Site
+                </CardTitle>
+                <CardDescription>Deploy a frontend application like React, Vue, Next.js or plain HTML.</CardDescription>
+              </CardHeader>
+            </Card>
+            
+            <Card className="cursor-pointer hover:border-foreground transition-colors group" onClick={() => setProjectType("web")}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Box className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  Web Service
+                </CardTitle>
+                <CardDescription>Deploy a backend application like Node.js, Express, Python or Go.</CardDescription>
+              </CardHeader>
+            </Card>
+          </motion.div>
+        ) : !selectedRepo ? (
+          <motion.div
+            key="repo-list"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-6"
+          >
+            <div className="flex gap-4 items-center">
+              <Button variant="ghost" onClick={() => setProjectType(null)}>← Back</Button>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search repositories..."
+                  className="pl-9 h-11 bg-card/50"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <Card className="bg-card/50 overflow-hidden">
+              {loading ? (
+                <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
+                  <div className="h-6 w-6 rounded-full border-2 border-foreground border-t-transparent animate-spin mb-4" />
+                  Loading repositories...
+                </div>
+              ) : filteredRepos.length === 0 ? (
+                <div className="p-12 text-center text-muted-foreground">
+                  No repositories found matching "{search}"
+                </div>
+              ) : (
+                <div className="divide-y divide-border/50 max-h-[500px] overflow-y-auto">
+                  {filteredRepos.map(repo => (
+                    <div key={repo.id} className="flex items-center justify-between p-4 hover:bg-secondary/20 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-lg bg-secondary flex items-center justify-center border border-border/50">
+                          <GitBranch className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="font-semibold flex items-center gap-2">
+                            {repo.name}
+                            {repo.private ? (
+                              <Lock className="h-3 w-3 text-muted-foreground" />
+                            ) : (
+                              <Globe className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
+                            <span className="flex items-center gap-1">
+                              <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                              {repo.language || "Unknown"}
+                            </span>
+                            <span>•</span>
+                            Updated {new Date(repo.updated_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                      <Button onClick={() => setSelectedRepo(repo)} size="sm">
+                        Import
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="repo-config"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-8"
+          >
+            <div className="md:col-span-2 space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Configure Project</CardTitle>
+                  <CardDescription>Review and modify the deployment settings for {selectedRepo.name}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Framework Preset</label>
+                    <Input value={framework} onChange={e => setFramework(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Build Command</label>
+                    <Input value={buildCmd} onChange={e => setBuildCmd(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Output Directory</label>
+                    <Input value={outputDir} onChange={e => setOutputDir(e.target.value)} />
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <div className="flex gap-4">
+                <Button variant="outline" onClick={() => setSelectedRepo(null)} disabled={isDeploying}>
+                  Back
+                </Button>
+                <Button onClick={handleDeploy} disabled={isDeploying} className="flex-1">
+                  {isDeploying ? "Deploying..." : "Deploy"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Repository</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3">
+                    <GitBranch className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium">{selectedRepo.full_name}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
