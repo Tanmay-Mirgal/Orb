@@ -22,7 +22,7 @@ jobs:
           script: |
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            cd ~/orb
+            cd ~/Orb
             git pull origin main
             npm install
             npm run build
@@ -39,5 +39,5 @@ jobs:
             fi
             
             # Update Caddy config
-            sudo cp ~/orb/Caddyfile /etc/caddy/Caddyfile
-            sudo systemctl reload caddy
+            sudo cp ~/Orb/Caddyfile /etc/caddy/Caddyfile
+            sudo systemctl restart caddy
