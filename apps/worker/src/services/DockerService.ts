@@ -83,17 +83,45 @@ fi
       if (framework === 'Next.js') {
         buildActionScript = `
 echo "[build] Configuring Next.js standalone mode..."
-if [ -f "next.config.js" ]; then
-  if ! grep -q "standalone" next.config.js; then
-    echo "module.exports.output = 'standalone';" >> next.config.js
-  fi
-elif [ -f "next.config.mjs" ]; then
-  if ! grep -q "standalone" next.config.mjs; then
-    echo "export const output = 'standalone';" >> next.config.mjs
-  fi
-else
-  echo "module.exports = { output: 'standalone' };" > next.config.js
-fi
+node << 'NODEJS_EOF'
+const fs = require('fs');
+const configFiles = ['next.config.ts', 'next.config.mjs', 'next.config.js', 'next.config.cjs'];
+const configFile = configFiles.find(f => fs.existsSync(f));
+
+if (!configFile) {
+  fs.writeFileSync('next.config.js', "module.exports = { output: 'standalone' };\n");
+  console.log('[build] Created next.config.js with standalone output.');
+} else {
+  let content = fs.readFileSync(configFile, 'utf8');
+  if (content.includes('standalone')) {
+    console.log('[build] standalone already configured in ' + configFile);
+  } else {
+    const isEsm = configFile.endsWith('.ts') || configFile.endsWith('.mjs');
+    if (isEsm) {
+      // Try to inject into const config = { ... }
+      const injected = content.replace(
+        /(\bconst\s+\w+\s*(?::\s*\w+(?:<\w+>)?\s*)?\s*=\s*\{)/,
+        "\$1\n  output: 'standalone',"
+      );
+      if (injected !== content) {
+        fs.writeFileSync(configFile, injected);
+      } else {
+        // Fallback: mutate before export default
+        const mutated = content.replace(
+          /export\s+default\s+(\w+)\s*;?/,
+          "\$1.output = 'standalone';\nexport default \$1;"
+        );
+        fs.writeFileSync(configFile, mutated);
+      }
+    } else {
+      // CJS: append module.exports.output
+      content += "\nmodule.exports.output = 'standalone';\n";
+      fs.writeFileSync(configFile, content);
+    }
+    console.log('[build] Injected standalone output into ' + configFile);
+  }
+}
+NODEJS_EOF
 echo "[build] Running build..."
 ${buildCommand} 2>&1
 echo "[build] Finalizing Next.js standalone server..."
