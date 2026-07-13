@@ -3,14 +3,13 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { 
-  Activity, Bell, Box, CreditCard, Database, Globe, 
+  Activity, Box, CreditCard, Database, Globe, 
   LayoutDashboard, Plus, Search, Settings, Webhook, 
-  PanelLeftClose, PanelLeftOpen, Lock, Terminal, BarChart, Moon
+  PanelLeftClose, PanelLeftOpen, Bell
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
 
 interface NavItem {
   name: string;
@@ -28,9 +27,6 @@ const RESOURCES_NAV: NavItem[] = [
   { name: "Domains", href: "/dashboard/domains", icon: Globe },
   { name: "Storage", href: "/dashboard/storage", icon: Database },
   { name: "Workers", href: "/dashboard/workers", icon: Webhook },
-  { name: "Secrets", href: "/dashboard/secrets", icon: Lock },
-  { name: "Logs", href: "/dashboard/logs", icon: Terminal },
-  { name: "Analytics", href: "/dashboard/analytics", icon: BarChart },
 ];
 
 const ACCOUNT_NAV: NavItem[] = [
@@ -53,16 +49,14 @@ export function SidebarLayout({
     
     return (
       <Link href={item.href}>
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+        <div
+          className={`flex items-center gap-3 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors ${
             isActive 
-              ? "bg-secondary/50 text-foreground shadow-sm border border-border/50" 
-              : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 border border-transparent"
+              ? "bg-secondary/40 text-foreground border border-border/40" 
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/20 border border-transparent"
           }`}
         >
-          <item.icon className={`h-[18px] w-[18px] flex-shrink-0 ${isActive ? "text-accent" : ""}`} />
+          <item.icon className={`h-4 w-4 flex-shrink-0 ${isActive ? "text-foreground" : "text-muted-foreground"}`} />
           <AnimatePresence>
             {!isCollapsed && (
               <motion.span
@@ -75,17 +69,17 @@ export function SidebarLayout({
               </motion.span>
             )}
           </AnimatePresence>
-        </motion.div>
+        </div>
       </Link>
     );
   };
 
   const NavSection = ({ title, items }: { title: string, items: NavItem[] }) => (
-    <div className="flex flex-col gap-1 mb-6">
+    <div className="flex flex-col gap-0.5 mb-6">
       {!isCollapsed && (
         <motion.div 
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-3"
+          className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-widest mb-2 px-3"
         >
           {title}
         </motion.div>
@@ -95,22 +89,23 @@ export function SidebarLayout({
   );
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      {/* Floating Sidebar */}
+    <div className="flex h-screen bg-[#050505] overflow-hidden text-white font-sans selection:bg-accent/30">
+      {/* Sidebar - Clean, Minimal */}
       <motion.aside 
-        animate={{ width: isCollapsed ? 72 : 260 }}
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="h-full flex-shrink-0 flex flex-col hidden md:flex border-r border-border/40 bg-card/30 backdrop-blur-xl relative z-20 shadow-[4px_0_24px_rgba(0,0,0,0.2)]"
+        animate={{ width: isCollapsed ? 64 : 240 }}
+        transition={{ type: "spring", stiffness: 400, damping: 40 }}
+        className="h-full flex-shrink-0 flex flex-col hidden md:flex border-r border-white/5 bg-[#0A0A0A] relative z-20"
       >
-        <div className="h-16 flex items-center px-5 border-b border-border/40 shrink-0">
+        {/* Logo Area */}
+        <div className="h-14 flex items-center px-4 border-b border-white/5 shrink-0">
           <Link href="/dashboard" className="flex items-center gap-3 w-full">
-            <div className="relative w-7 h-7 shrink-0">
-              <Image src="/logo.png" alt="Orb" fill className="object-contain" />
+            <div className="w-6 h-6 rounded flex items-center justify-center bg-white text-black font-bold text-xs shrink-0">
+              O
             </div>
             {!isCollapsed && (
               <motion.span 
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="font-bold tracking-tight text-lg"
+                className="font-semibold tracking-tight text-sm"
               >
                 Orb
               </motion.span>
@@ -118,79 +113,67 @@ export function SidebarLayout({
           </Link>
         </div>
         
+        {/* Nav Links */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 px-3 custom-scrollbar">
           <NavSection title="General" items={GENERAL_NAV} />
           <NavSection title="Resources" items={RESOURCES_NAV} />
           <NavSection title="Account" items={ACCOUNT_NAV} />
         </div>
 
-        <div className="shrink-0 p-3 border-t border-border/40 flex flex-col gap-2">
-          {!isCollapsed && userProfile}
-          
-          <div className="flex items-center justify-between gap-2">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="text-muted-foreground hover:text-foreground h-9 w-9 shrink-0"
-            >
-              {isCollapsed ? <PanelLeftOpen className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
-            </Button>
-            
-            {!isCollapsed && (
-              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-9 w-9 shrink-0">
-                <Moon className="h-[18px] w-[18px]" />
-              </Button>
-            )}
+        {/* Footer Area */}
+        <div className="shrink-0 p-3 border-t border-white/5 flex items-center justify-between">
+          <div className="flex-1 truncate">
+            {!isCollapsed && userProfile}
           </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="text-muted-foreground hover:text-white h-7 w-7 shrink-0 rounded-md"
+          >
+            {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
         </div>
       </motion.aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Blurred Topbar */}
-        <header className="h-16 border-b border-border/40 bg-background/60 backdrop-blur-xl flex items-center justify-between px-8 absolute top-0 w-full z-10 supports-[backdrop-filter]:bg-background/60">
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col min-w-0 relative bg-[#050505]">
+        
+        {/* Minimal Topbar */}
+        <header className="h-14 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md flex items-center justify-between px-6 absolute top-0 w-full z-10">
           <div className="flex items-center gap-4 flex-1">
-            <div className="relative w-full max-w-md hidden sm:flex items-center group">
-              <Search className="absolute left-3 h-[18px] w-[18px] text-muted-foreground group-focus-within:text-accent transition-colors" />
+            <div className="relative w-full max-w-[280px] hidden sm:flex items-center group">
+              <Search className="absolute left-3 h-4 w-4 text-muted-foreground group-focus-within:text-white transition-colors" />
               <input
                 type="text"
-                placeholder="Search projects, domains..."
-                className="w-full h-10 bg-card border border-border/50 rounded-lg pl-10 pr-12 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all shadow-sm"
+                placeholder="Search..."
+                className="w-full h-8 bg-white/5 border border-white/10 rounded-md pl-9 pr-10 text-[13px] text-white focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all placeholder:text-muted-foreground"
               />
-              <div className="absolute right-3 flex items-center gap-1">
-                <kbd className="inline-flex h-5 items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
-                  <span className="text-xs">⌘</span>K
+              <div className="absolute right-2 flex items-center">
+                <kbd className="inline-flex items-center rounded border border-white/10 bg-white/5 px-1.5 font-mono text-[10px] text-muted-foreground">
+                  ⌘K
                 </kbd>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-5">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground rounded-full h-9 w-9 relative">
-              <Bell className="h-[18px] w-[18px]" />
-              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-accent ring-2 ring-background"></span>
-            </Button>
-            
-            <div className="h-5 w-px bg-border/60 mx-1"></div>
-            
+          <div className="flex items-center gap-4">
+            <button className="text-muted-foreground hover:text-white relative">
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+            </button>
+            <div className="h-4 w-px bg-white/10"></div>
             <Link href="/dashboard/new">
-              <Button size="sm" className="h-9 px-4 rounded-lg bg-accent hover:bg-accent/90 text-accent-foreground shadow-[0_0_15px_rgba(79,124,255,0.3)] transition-all">
-                <Plus className="mr-2 h-4 w-4" /> New Project
-              </Button>
+              <button className="h-8 px-3 rounded-md bg-white text-black text-[13px] font-medium hover:bg-white/90 transition-colors flex items-center gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> New
+              </button>
             </Link>
           </div>
         </header>
         
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-auto pt-16">
-          <div className="max-w-[1400px] mx-auto w-full p-8">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
-              {children}
-            </motion.div>
+        {/* Page Content */}
+        <div className="flex-1 overflow-auto pt-14">
+          <div className="max-w-[1200px] mx-auto w-full p-8 md:p-10">
+            {children}
           </div>
         </div>
       </main>
