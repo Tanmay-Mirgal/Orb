@@ -2,8 +2,6 @@
     email tanmay@tanmaymirgal.dev
     on_demand_tls {
         ask http://localhost:3000/api/caddy/ask
-        interval 2m
-        burst 5
     }
 }
 
