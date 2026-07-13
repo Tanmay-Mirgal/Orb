@@ -93,7 +93,7 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
       {/* Tab Content */}
       <div className="mt-2">
         {activeTab === "overview" && <OverviewTab deploymentId={deploymentId} project={project} repository={repository} />}
-        {activeTab === "deployments" && <DeploymentsTab projectId={project.id} />}
+        {activeTab === "deployments" && <DeploymentsTab projectId={project.id} onSelect={(id) => { setDeploymentId(id); setActiveTab("overview"); }} />}
         {activeTab === "env" && <EnvironmentTab projectId={project.id} />}
         {activeTab === "settings" && <SettingsTab project={project} />}
       </div>
@@ -204,7 +204,7 @@ function OverviewTab({ deploymentId, project, repository }: { deploymentId: stri
   );
 }
 
-function DeploymentsTab({ projectId }: { projectId: string }) {
+function DeploymentsTab({ projectId, onSelect }: { projectId: string, onSelect: (id: string) => void }) {
   const [deployments, setDeployments] = useState<any[]>([]);
   
   useEffect(() => {
@@ -219,7 +219,7 @@ function DeploymentsTab({ projectId }: { projectId: string }) {
     <Card>
       <CardHeader>
         <CardTitle>Deployment History</CardTitle>
-        <CardDescription>A list of all previous deployments for this project.</CardDescription>
+        <CardDescription>A list of all previous deployments for this project. Click to view logs.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="relative border-l border-border/40 ml-4 py-2 space-y-8">
@@ -230,7 +230,7 @@ function DeploymentsTab({ projectId }: { projectId: string }) {
               <span className={`absolute left-[-5px] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-background ${
                 dep.status === "SUCCESS" ? "bg-success" : dep.status === "FAILED" ? "bg-destructive" : "bg-warning"
               }`}></span>
-              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 p-4 rounded-md border border-border/50 bg-secondary/10 hover:bg-secondary/30 transition-colors cursor-pointer">
+              <div onClick={() => onSelect(dep.id)} className="flex flex-col sm:flex-row justify-between items-start gap-4 p-4 rounded-md border border-border/50 bg-secondary/10 hover:bg-secondary/30 transition-colors cursor-pointer">
                 <div>
                   <div className="font-medium mb-1">{dep.commitMessage || 'Manual Deployment'}</div>
                   <div className="text-xs text-muted-foreground flex items-center gap-2">
@@ -257,6 +257,8 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
   const [isAdding, setIsAdding] = useState(false);
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkEnv, setBulkEnv] = useState('');
 
   const fetchEnvVars = async () => {
     try {
@@ -290,6 +292,33 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
     setIsAdding(false);
   };
 
+  const handleBulkAdd = async () => {
+    if (!bulkEnv.trim()) return;
+    setIsAdding(true);
+    try {
+      const lines = bulkEnv.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const [key, ...valueParts] = trimmed.split('=');
+        const value = valueParts.join('=').replace(/^["'](.*)["']$/, '$1').trim();
+        if (key && value) {
+          await fetch(`/api/projects/env?projectId=${projectId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key.trim(), value })
+          });
+        }
+      }
+      setBulkEnv('');
+      setIsBulkMode(false);
+      fetchEnvVars();
+    } catch (e) {
+      console.error(e);
+    }
+    setIsAdding(false);
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await fetch(`/api/projects/env?projectId=${projectId}&id=${id}`, {
@@ -310,10 +339,33 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex items-center gap-4">
-          <input type="text" placeholder="KEY (e.g. DATABASE_URL)" value={newKey} onChange={e => setNewKey(e.target.value)} className="flex-1 h-10 bg-secondary/30 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border font-mono" />
-          <input type="text" placeholder="VALUE" value={newValue} onChange={e => setNewValue(e.target.value)} className="flex-1 h-10 bg-secondary/30 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border font-mono" />
-          <Button onClick={handleAdd} disabled={isAdding || !newKey || !newValue}><Plus className="mr-2 h-4 w-4" /> Add Variable</Button>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Add New Variable</h3>
+            <Button variant="ghost" size="sm" onClick={() => setIsBulkMode(!isBulkMode)}>
+              {isBulkMode ? 'Switch to Single' : 'Switch to Bulk Paste'}
+            </Button>
+          </div>
+          
+          {isBulkMode ? (
+            <div className="flex flex-col gap-3">
+              <textarea 
+                className="w-full min-h-[150px] bg-secondary/30 border border-border/50 rounded-md p-3 text-sm focus:outline-none focus:border-border font-mono"
+                placeholder={`KEY1=value1\nKEY2="value 2"\n# Comments are ignored`}
+                value={bulkEnv}
+                onChange={e => setBulkEnv(e.target.value)}
+              />
+              <Button onClick={handleBulkAdd} disabled={isAdding || !bulkEnv.trim()} className="w-fit">
+                <Plus className="mr-2 h-4 w-4" /> Add Multiple Variables
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <input type="text" placeholder="KEY (e.g. DATABASE_URL)" value={newKey} onChange={e => setNewKey(e.target.value)} className="flex-1 h-10 bg-secondary/30 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border font-mono" />
+              <input type="text" placeholder="VALUE" value={newValue} onChange={e => setNewValue(e.target.value)} className="flex-1 h-10 bg-secondary/30 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border font-mono" />
+              <Button onClick={handleAdd} disabled={isAdding || !newKey || !newValue}><Plus className="mr-2 h-4 w-4" /> Add Variable</Button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-md border border-border/50 overflow-hidden">
