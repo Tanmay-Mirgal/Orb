@@ -8,6 +8,7 @@ import {
   Server, Shield, Box, Bot, Activity, ArrowRight,
   Database, Cpu, CheckCircle2, ChevronRight, Menu, X, RefreshCcw, LogOut, Settings as SettingsIcon
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { useSession, signOut } from "@/lib/auth-client";
@@ -56,8 +57,8 @@ function Navbar({ session }: { session: any }) {
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#050505]/80 backdrop-blur-xl border-b border-white/[0.08] py-3' : 'bg-transparent py-5'}`}>
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-[8px] bg-white flex items-center justify-center border border-white/20 shadow-[0_0_15px_rgba(255,255,255,0.3)]">
-            <span className="text-black font-bold text-lg">O</span>
+          <div className="w-8 h-8 rounded-[8px] flex items-center justify-center border border-white/20 shadow-[0_0_15px_rgba(255,255,255,0.3)] overflow-hidden bg-[#0A0A0A]">
+            <Image src="/logo.png" alt="Orb Logo" width={32} height={32} className="object-cover" />
           </div>
           <span className="font-semibold text-lg tracking-tight">Orb</span>
         </div>
@@ -492,8 +493,8 @@ function Footer() {
       <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-10 mb-16">
         <div className="col-span-2">
           <div className="flex items-center gap-2 mb-6">
-            <div className="w-6 h-6 rounded bg-white flex items-center justify-center">
-              <span className="text-black font-bold text-xs">O</span>
+            <div className="w-6 h-6 rounded flex items-center justify-center overflow-hidden bg-[#0A0A0A]">
+              <Image src="/logo.png" alt="Orb Logo" width={24} height={24} className="object-cover" />
             </div>
             <span className="font-semibold tracking-tight">Orb Platform</span>
           </div>

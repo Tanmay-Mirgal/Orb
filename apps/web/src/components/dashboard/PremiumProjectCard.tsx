@@ -28,7 +28,7 @@ const MiniSparkline = () => {
 };
 
 export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumProjectCardProps) {
-  const isProd = true; // Hardcoded for aesthetic
+  const isProd = true;
   const isGithubConnected = !!repository?.githubRepositoryName;
   const projectUrl = `https://${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`;
 
@@ -45,20 +45,20 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
       {/* Top Header */}
       <div className="flex justify-between items-start mb-6 relative z-10">
         <div className="flex items-center gap-4">
-          <div className="relative h-12 w-12 rounded-xl bg-secondary flex items-center justify-center border border-border/50 group-hover:border-accent/30 transition-colors overflow-hidden">
+          <div className="relative h-12 w-12 rounded-xl bg-secondary flex items-center justify-center border border-border/50 group-hover:border-accent/30 transition-colors overflow-hidden shrink-0">
             <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <span className="font-bold text-lg">{project.name.charAt(0).toUpperCase()}</span>
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Link href={`/dashboard/projects/${project.name}`} className="text-xl font-semibold hover:text-accent transition-colors">
+              <Link href={`/dashboard/projects/${project.name}`} className="text-xl font-semibold hover:text-accent transition-colors truncate">
                 {project.name}
               </Link>
-              <div className="px-2 py-0.5 rounded-full bg-secondary text-xs font-medium border border-border/50 text-muted-foreground">
+              <div className="px-2 py-0.5 rounded-full bg-secondary text-xs font-medium border border-border/50 text-muted-foreground shrink-0">
                 {project.framework || 'Node.js'}
               </div>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1.5">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1.5 whitespace-nowrap">
               <span className="flex items-center gap-1">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
@@ -68,8 +68,8 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
               </span>
               {isGithubConnected && (
                 <>
-                  <span className="h-1 w-1 rounded-full bg-border"></span>
-                  <span className="flex items-center gap-1"><Code className="h-3 w-3" /> Connected</span>
+                  <span className="h-1 w-1 rounded-full bg-border shrink-0"></span>
+                  <span className="flex items-center gap-1 truncate"><Code className="h-3 w-3 shrink-0" /> Connected</span>
                 </>
               )}
             </div>
@@ -77,12 +77,9 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
         </div>
         
         {/* Quick Actions / Dropdown */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
             <a href={projectUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a>
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
-            <Link href={`/dashboard/projects/${project.name}/logs`}><Terminal className="h-4 w-4" /></Link>
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
             <Link href={`/dashboard/projects/${project.name}/settings`}><Settings className="h-4 w-4" /></Link>
@@ -92,18 +89,18 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
 
       {/* Middle Stats */}
       <div className="grid grid-cols-2 gap-4 mb-6 relative z-10">
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 min-w-0">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Repository</span>
           <div className="flex items-center gap-2 text-sm">
-            <GitBranch className="h-4 w-4 text-muted-foreground" />
-            <span className="truncate max-w-[120px]">{repository?.githubRepositoryName || 'local-repo'}</span>
-            <span className="text-muted-foreground px-1.5 py-0.5 bg-secondary rounded text-[10px]">{repository?.branch || 'main'}</span>
+            <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="truncate">{repository?.githubRepositoryName || 'local-repo'}</span>
+            <span className="text-muted-foreground px-1.5 py-0.5 bg-secondary rounded text-[10px] shrink-0">{repository?.branch || 'main'}</span>
           </div>
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 min-w-0">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Deployment</span>
           <div className="flex items-center gap-2 text-sm">
-            <Globe className="h-4 w-4 text-muted-foreground" />
+            <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
             <a href={projectUrl} target="_blank" rel="noopener noreferrer" className="truncate text-muted-foreground hover:text-foreground hover:underline transition-colors">
               {project.name}.orb.dev
             </a>
@@ -114,18 +111,16 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
       {/* Divider */}
       <div className="h-px w-full bg-border/40 mb-5 relative z-10"></div>
 
-      {/* Bottom Simulated Metrics */}
-      <div className="flex flex-col gap-3 relative z-10">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Deployed {formatDistanceToNow(new Date(project.createdAt), { addSuffix: true })}</span>
-          <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1"><Cpu className="h-3.5 w-3.5" /> 12%</span>
-            <span className="flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" /> 240MB</span>
-          </span>
-        </div>
-        <div className="mt-1">
-          <MiniSparkline />
-        </div>
+      {/* Bottom Simulated Metrics - Fixed Width/Wrapping */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground relative z-10">
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <Activity className="h-3.5 w-3.5 shrink-0" /> 
+          Deployed {formatDistanceToNow(new Date(project.createdAt))} ago
+        </span>
+        <span className="flex items-center gap-3 shrink-0">
+          <span className="flex items-center gap-1"><Cpu className="h-3.5 w-3.5 text-white/40" /> 12%</span>
+          <span className="flex items-center gap-1"><HardDrive className="h-3.5 w-3.5 text-white/40" /> 240MB</span>
+        </span>
       </div>
     </motion.div>
   );

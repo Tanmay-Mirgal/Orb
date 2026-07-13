@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 
 interface NavItem {
   name: string;
@@ -20,17 +21,13 @@ interface NavItem {
 const GENERAL_NAV: NavItem[] = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Projects", href: "/dashboard/projects", icon: Box },
-  { name: "Deployments", href: "/dashboard/deployments", icon: Activity },
 ];
 
 const RESOURCES_NAV: NavItem[] = [
   { name: "Domains", href: "/dashboard/domains", icon: Globe },
-  { name: "Storage", href: "/dashboard/storage", icon: Database },
-  { name: "Workers", href: "/dashboard/workers", icon: Webhook },
 ];
 
 const ACCOUNT_NAV: NavItem[] = [
-  { name: "Billing", href: "/dashboard/billing", icon: CreditCard },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
@@ -99,8 +96,8 @@ export function SidebarLayout({
         {/* Logo Area */}
         <div className="h-14 flex items-center px-4 border-b border-white/5 shrink-0">
           <Link href="/dashboard" className="flex items-center gap-3 w-full">
-            <div className="w-6 h-6 rounded flex items-center justify-center bg-white text-black font-bold text-xs shrink-0">
-              O
+            <div className="w-6 h-6 rounded flex items-center justify-center overflow-hidden bg-[#0A0A0A] shrink-0">
+              <Image src="/logo.png" alt="Orb Logo" width={24} height={24} className="object-cover" />
             </div>
             {!isCollapsed && (
               <motion.span 

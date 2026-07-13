@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const data = [
@@ -15,12 +14,12 @@ const data = [
 
 export function DashboardCharts() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Deployment Activity</CardTitle>
-        <CardDescription>Number of deployments over the last 7 days.</CardDescription>
-      </CardHeader>
-      <CardContent className="h-[300px] w-full">
+    <div className="h-full w-full flex flex-col pt-4">
+      <div className="flex flex-col mb-4">
+        <h3 className="text-xl font-semibold text-white">Deployment Activity</h3>
+        <p className="text-sm text-muted-foreground">Number of deployments over the last 7 days.</p>
+      </div>
+      <div className="flex-1 min-h-[200px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
             <XAxis 
@@ -51,7 +50,7 @@ export function DashboardCharts() {
             />
           </LineChart>
         </ResponsiveContainer>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

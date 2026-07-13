@@ -5,6 +5,7 @@ import { signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 // Using standard simple SVG path for official GitHub logo to match brand guidelines perfectly
 const GithubIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -83,8 +84,8 @@ export default function LoginPage() {
         >
           {/* Logo & Header */}
           <div className="flex flex-col items-center text-center mb-10 w-full">
-            <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center mb-6">
-              <span className="text-black font-bold text-xl">O</span>
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-6 overflow-hidden bg-[#0A0A0A]">
+              <Image src="/logo.png" alt="Orb Logo" width={40} height={40} className="object-cover" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight mb-2">Welcome Back</h1>
             <p className="text-muted-foreground text-sm">Deploy with confidence. Scale with ease.</p>
