@@ -51,7 +51,7 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Link href={`/dashboard/projects/${project.name}`} className="text-xl font-semibold hover:text-accent transition-colors truncate">
+              <Link href={`/dashboard/projects/${project.slug || project.name.toLowerCase()}`} className="text-xl font-semibold hover:text-accent transition-colors truncate">
                 {project.name}
               </Link>
               <div className="px-2 py-0.5 rounded-full bg-secondary text-xs font-medium border border-border/50 text-muted-foreground shrink-0">
@@ -82,7 +82,7 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
             <a href={projectUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a>
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
-            <Link href={`/dashboard/projects/${project.name}/settings`}><Settings className="h-4 w-4" /></Link>
+            <Link href={`/dashboard/projects/${project.slug || project.name.toLowerCase()}/settings`}><Settings className="h-4 w-4" /></Link>
           </Button>
         </div>
       </div>
