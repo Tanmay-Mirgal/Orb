@@ -6,23 +6,25 @@ import { Button } from "@/components/ui/button";
 import { 
   Zap, GitBranch, Play, Terminal, Globe, 
   Server, Shield, Box, Bot, Activity, ArrowRight,
-  Database, Cpu, CheckCircle2, ChevronRight, Menu, X, RefreshCcw
+  Database, Cpu, CheckCircle2, ChevronRight, Menu, X, RefreshCcw, LogOut, Settings as SettingsIcon
 } from "lucide-react";
 import Link from "next/link";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
+import { useSession, signOut } from "@/lib/auth-client";
 
 export function LandingClient() {
   const { scrollY } = useScroll();
   const opacityHero = useTransform(scrollY, [0, 500], [1, 0]);
   const yHero = useTransform(scrollY, [0, 500], [0, 100]);
+  const { data: session } = useSession();
   
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-accent/30 selection:text-white overflow-hidden font-sans">
-      <Navbar />
+      <Navbar session={session} />
       
       <main className="relative z-10 flex flex-col items-center w-full">
         <motion.div style={{ opacity: opacityHero, y: yHero }} className="w-full">
-          <HeroSection />
+          <HeroSection session={session} />
         </motion.div>
         
         <BentoFeaturesSection />
@@ -39,9 +41,10 @@ export function LandingClient() {
 // --------------------------------------------------------------------------------
 // NAVBAR
 // --------------------------------------------------------------------------------
-function Navbar() {
+function Navbar({ session }: { session: any }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -67,10 +70,46 @@ function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-4">
-          <Link href="/login" className="text-sm font-medium text-white/70 hover:text-white transition-colors">Log In</Link>
-          <Button className="h-9 rounded-[8px] bg-white text-black hover:bg-white/90 font-medium px-4 transition-all hover:scale-105 active:scale-95" asChild>
-            <Link href="/dashboard">Dashboard</Link>
-          </Button>
+          {!session ? (
+            <>
+              <Link href="/login" className="text-sm font-medium text-white/70 hover:text-white transition-colors">Log In</Link>
+              <Button className="h-9 rounded-[8px] bg-white text-black hover:bg-white/90 font-medium px-4 transition-all hover:scale-105 active:scale-95" asChild>
+                <Link href="/login">Get Started</Link>
+              </Button>
+            </>
+          ) : (
+            <div className="relative">
+              <button 
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="flex items-center gap-2 hover:bg-white/5 p-1.5 rounded-full pr-3 transition-colors border border-transparent hover:border-white/10"
+              >
+                <div className="relative">
+                  <img src={session.user.image || `https://avatar.vercel.sh/${session.user.email}`} alt="Avatar" className="w-7 h-7 rounded-full border border-white/20" />
+                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-[#050505] rounded-full"></div>
+                </div>
+                <span className="text-sm font-medium">{session.user.name || 'User'}</span>
+              </button>
+
+              <AnimatePresence>
+                {userMenuOpen && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+                    className="absolute right-0 top-full mt-2 w-48 bg-[#0A0A0A] border border-white/10 rounded-[12px] shadow-2xl p-1 z-50 flex flex-col"
+                  >
+                    <Link href="/dashboard" className="px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 rounded-[8px] flex items-center gap-2 transition-colors"><Box className="h-4 w-4" /> Dashboard</Link>
+                    <Link href="/dashboard/settings" className="px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 rounded-[8px] flex items-center gap-2 transition-colors"><SettingsIcon className="h-4 w-4" /> Settings</Link>
+                    <div className="h-[1px] bg-white/10 my-1 mx-2"></div>
+                    <button 
+                      onClick={async () => { await signOut(); window.location.href = "/"; }}
+                      className="px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-[8px] flex items-center gap-2 transition-colors w-full text-left"
+                    >
+                      <LogOut className="h-4 w-4" /> Sign Out
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
 
         <button className="md:hidden text-white" onClick={() => setMobileMenu(!mobileMenu)}>
@@ -87,10 +126,21 @@ function Navbar() {
           >
             <Link href="#features" className="text-sm font-medium hover:text-white transition-colors">Features</Link>
             <Link href="#pricing" className="text-sm font-medium hover:text-white transition-colors">Pricing</Link>
-            <Link href="/login" className="text-sm font-medium hover:text-white transition-colors">Log In</Link>
-            <Button className="w-full h-10 rounded-[8px] bg-white text-black font-medium" asChild>
-              <Link href="/dashboard">Dashboard</Link>
-            </Button>
+            {!session ? (
+              <>
+                <Link href="/login" className="text-sm font-medium hover:text-white transition-colors">Log In</Link>
+                <Button className="w-full h-10 rounded-[8px] bg-white text-black font-medium" asChild>
+                  <Link href="/login">Get Started</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="h-[1px] bg-white/10 my-2"></div>
+                <Link href="/dashboard" className="text-sm font-medium hover:text-white transition-colors">Dashboard</Link>
+                <Link href="/dashboard/settings" className="text-sm font-medium hover:text-white transition-colors">Settings</Link>
+                <button onClick={() => signOut()} className="text-sm font-medium text-red-400 text-left">Sign Out</button>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -101,14 +151,11 @@ function Navbar() {
 // --------------------------------------------------------------------------------
 // HERO SECTION
 // --------------------------------------------------------------------------------
-function HeroSection() {
+function HeroSection({ session }: { session: any }) {
   return (
     <section className="relative pt-40 pb-20 md:pt-52 md:pb-32 px-6 w-full flex flex-col items-center justify-center min-h-screen">
-      {/* Background Grid & Glows */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        {/* Fine grid */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_0%,#000_70%,transparent_100%)]"></div>
-        {/* Glows */}
         <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[800px] rounded-full bg-[#4F7CFF] opacity-10 blur-[120px]"></div>
         <div className="absolute left-1/4 top-1/4 h-[300px] w-[400px] rounded-full bg-purple-600 opacity-5 blur-[100px]"></div>
       </div>
@@ -141,12 +188,24 @@ function HeroSection() {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
           className="flex flex-col sm:flex-row items-center gap-4 w-full justify-center"
         >
-          <Button className="h-12 px-8 rounded-full bg-white text-black hover:bg-white/90 font-medium text-base shadow-[0_0_40px_rgba(255,255,255,0.2)] transition-all hover:scale-105 active:scale-95 group">
-            Start Deploying <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-          </Button>
-          <Button variant="outline" className="h-12 px-8 rounded-full border-white/10 bg-white/[0.03] hover:bg-white/10 text-white font-medium text-base backdrop-blur-md transition-all">
-            <GitBranch className="mr-2 h-4 w-4" /> Import from GitHub
-          </Button>
+          {session ? (
+            <Button className="h-12 px-8 rounded-[8px] bg-white text-black hover:bg-white/90 font-medium text-base shadow-[0_0_40px_rgba(255,255,255,0.2)] transition-all hover:scale-105 active:scale-95 group" asChild>
+              <Link href="/dashboard">
+                Open Dashboard <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+          ) : (
+            <>
+              <Button className="h-12 px-8 rounded-full bg-white text-black hover:bg-white/90 font-medium text-base shadow-[0_0_40px_rgba(255,255,255,0.2)] transition-all hover:scale-105 active:scale-95 group" asChild>
+                <Link href="/login">
+                  Start Deploying <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </Button>
+              <Button variant="outline" className="h-12 px-8 rounded-full border-white/10 bg-white/[0.03] hover:bg-white/10 text-white font-medium text-base backdrop-blur-md transition-all">
+                <GitBranch className="mr-2 h-4 w-4" /> Import from GitHub
+              </Button>
+            </>
+          )}
         </motion.div>
       </div>
 
@@ -174,6 +233,7 @@ function HeroSection() {
   );
 }
 
+// ... Rest of the file remains exactly the same ...
 // Terminal Typing Hook Simulation
 function TerminalTypingEffect() {
   const lines = [
@@ -232,7 +292,6 @@ function BentoFeaturesSection() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 auto-rows-[300px]">
-        {/* Large Main Feature */}
         <div className="md:col-span-2 lg:col-span-2 row-span-2 rounded-[24px] border border-white/10 bg-white/[0.02] p-8 flex flex-col justify-between overflow-hidden relative group hover:border-white/20 transition-colors">
           <div className="absolute inset-0 bg-gradient-to-br from-[#4F7CFF]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative z-10">
@@ -243,7 +302,6 @@ function BentoFeaturesSection() {
             <p className="text-white/50">Your application is automatically replicated across 35 regions globally. Requests are routed to the nearest node for sub-50ms latency anywhere in the world.</p>
           </div>
           <div className="relative z-10 w-full h-48 mt-8 border border-white/10 rounded-[12px] bg-[#0A0A0A] overflow-hidden flex items-center justify-center">
-            {/* Minimal SVG Map simulation */}
             <svg viewBox="0 0 400 200" className="w-full h-full opacity-30">
               <path d="M50 80 Q 150 20 250 80 T 350 80" fill="none" stroke="#4F7CFF" strokeWidth="2" strokeDasharray="5,5" />
               <circle cx="50" cy="80" r="4" fill="#4F7CFF" className="animate-pulse" />
@@ -253,7 +311,6 @@ function BentoFeaturesSection() {
           </div>
         </div>
 
-        {/* Medium Feature */}
         <div className="md:col-span-1 lg:col-span-2 rounded-[24px] border border-white/10 bg-white/[0.02] p-8 flex flex-col justify-between relative group hover:border-white/20 transition-colors">
           <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative z-10">
@@ -265,7 +322,6 @@ function BentoFeaturesSection() {
           </div>
         </div>
 
-        {/* Small Features */}
         {[
           { title: "Zero Downtime", icon: RefreshCcw, desc: "Seamless blue-green deployments." },
           { title: "Docker Native", icon: Box, desc: "Deploy any containerized app." },
@@ -339,8 +395,6 @@ function AIAndAnalyticsSection() {
   return (
     <section className="py-32 px-6 max-w-7xl mx-auto w-full relative z-10">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Analytics Mockup */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.02] p-8 md:p-12 overflow-hidden relative group">
           <h3 className="text-2xl font-bold mb-4">Deep Observability</h3>
           <p className="text-white/50 mb-10 max-w-sm">Monitor CPU, Memory, bandwidth, and edge requests with sub-second latency.</p>
@@ -361,7 +415,6 @@ function AIAndAnalyticsSection() {
           </div>
         </div>
 
-        {/* AI Chat Mockup */}
         <div className="rounded-[24px] border border-white/10 bg-white/[0.02] p-8 md:p-12 overflow-hidden relative">
           <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 blur-[100px] rounded-full"></div>
           <h3 className="text-2xl font-bold mb-4">Meet Orb AI</h3>

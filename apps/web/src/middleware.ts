@@ -5,7 +5,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  if (pathname.startsWith("/dashboard")) {
+  // Only protect dashboard and check login page
+  if (pathname.startsWith("/dashboard") || pathname === "/login") {
     const { data: session } = await betterFetch<Session>(
       "/api/auth/get-session",
       {
@@ -16,8 +17,12 @@ export async function middleware(request: NextRequest) {
       },
     );
 
-    if (!session) {
+    if (!session && pathname.startsWith("/dashboard")) {
       return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    if (session && pathname === "/login") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
 
@@ -25,5 +30,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/login"],
 };
