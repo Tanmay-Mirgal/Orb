@@ -77,6 +77,8 @@ fi
 
 echo "[build] Running build..."
 ${buildCommand} 2>&1
+echo "[build] Fixing permissions..."
+chmod -R 777 . 2>&1 || true
 echo "[build] Done!"
 `;
 
