@@ -49,10 +49,17 @@ export class RoutingService {
     
     const deployment = deploymentResult[0];
 
-    // For simplicity, if buildCommand contains "next", we assume dynamic/SSR. Otherwise static.
+    // Determine if it's static based on framework
     const projectInfo = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     const buildCmd = projectInfo[0]?.buildCommand || '';
-    const isStatic = !buildCmd.includes('next'); // simple heuristic
+    const framework = projectInfo[0]?.framework || '';
+    
+    let isStatic = true;
+    if (framework === 'Next.js' || framework === 'Flask' || framework === 'Node.js') {
+      isStatic = false;
+    } else if (buildCmd.includes('next') || buildCmd.includes('flask') || buildCmd.includes('node')) {
+      isStatic = false;
+    }
 
     return {
       projectId,
