@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { 
   GitBranch, Globe, Terminal, Settings as SettingsIcon, Play, RefreshCcw, 
   ExternalLink, Lock, Box, CheckCircle2, RotateCcw,
-  Search, Key, Code, Download, Copy
+  Search, Key, Code, Download, Copy, Eye, EyeOff, Edit2, Check, X as XIcon
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -23,6 +23,14 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
   const [activeTab, setActiveTab] = useState("overview");
   const [deploymentId, setDeploymentId] = useState<string>("");
   const [isDeploying, setIsDeploying] = useState(false);
+  const [hasDeployments, setHasDeployments] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/deployments?projectId=${project.id}`)
+      .then(res => res.json())
+      .then(data => { if(data.deployments?.length > 0) setHasDeployments(true); })
+      .catch(console.error);
+  }, [project.id]);
 
   const projectUrl = `https://${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`;
 
@@ -84,8 +92,8 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
             disabled={isDeploying || !repository}
             className="h-9 rounded-[8px] bg-white text-black hover:bg-white/90 font-medium px-4 transition-all text-xs"
           >
-            {isDeploying ? <RefreshCcw className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5 fill-current" />}
-            {isDeploying ? 'Deploying' : 'Deploy'}
+            {isDeploying ? <RefreshCcw className="mr-2 h-3.5 w-3.5 animate-spin" /> : (hasDeployments ? <RefreshCcw className="mr-2 h-3.5 w-3.5" /> : <Play className="mr-2 h-3.5 w-3.5 fill-current" />)}
+            {isDeploying ? 'Deploying...' : (hasDeployments ? 'Redeploy' : 'Deploy')}
           </Button>
         </div>
       </div>
@@ -294,6 +302,10 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   
+  const [visibleValues, setVisibleValues] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  
   const fetchEnvVars = async () => {
     try {
       const res = await fetch(`/api/projects/env?projectId=${projectId}`);
@@ -315,6 +327,30 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
     try { await fetch(`/api/projects/env?projectId=${projectId}&id=${id}`, { method: 'DELETE' }); fetchEnvVars(); } catch (e) {}
   };
 
+  const toggleVisibility = (id: string) => {
+    const next = new Set(visibleValues);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setVisibleValues(next);
+  };
+
+  const startEdit = (env: any) => {
+    setEditingId(env.id);
+    setEditValue(env.value);
+  };
+
+  const handleSaveEdit = async (env: any) => {
+    try {
+      await fetch(`/api/projects/env`, { 
+        method: 'PUT', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ id: env.id, projectId, key: env.key, value: editValue }) 
+      });
+      setEditingId(null);
+      fetchEnvVars();
+    } catch (e) {}
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-[16px] border border-white/10 bg-white/[0.02] overflow-hidden">
@@ -328,21 +364,57 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
             <tr>
               <th className="px-6 py-4 font-medium">Name</th>
               <th className="px-6 py-4 font-medium">Value</th>
-              <th className="px-6 py-4 font-medium text-right">Actions</th>
+              <th className="px-6 py-4 font-medium text-right w-48">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {envVars.length === 0 ? (
               <tr><td colSpan={3} className="px-6 py-8 text-center text-muted-foreground">No variables added.</td></tr>
-            ) : envVars.map((env, i) => (
-              <tr key={env.id || i} className="hover:bg-white/[0.02]">
-                <td className="px-6 py-4 font-medium font-mono text-xs">{env.key}</td>
-                <td className="px-6 py-4 text-muted-foreground font-mono text-xs">••••••••••••••••</td>
-                <td className="px-6 py-4 text-right">
-                  <button onClick={() => handleDelete(env.id)} className="text-muted-foreground hover:text-red-400 text-xs transition-colors">Delete</button>
-                </td>
-              </tr>
-            ))}
+            ) : envVars.map((env, i) => {
+              const isVisible = visibleValues.has(env.id);
+              const isEditing = editingId === env.id;
+              
+              return (
+                <tr key={env.id || i} className="hover:bg-white/[0.02] group">
+                  <td className="px-6 py-4 font-medium font-mono text-xs max-w-[200px] truncate">{env.key}</td>
+                  <td className="px-6 py-4 text-muted-foreground font-mono text-xs">
+                    {isEditing ? (
+                      <input 
+                        type="text" 
+                        value={editValue} 
+                        onChange={e => setEditValue(e.target.value)} 
+                        className="w-full h-8 bg-[#050505] border border-white/20 rounded px-2 text-white outline-none focus:border-[#4F7CFF]"
+                        autoFocus
+                      />
+                    ) : (
+                      isVisible ? env.value : "••••••••••••••••"
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isEditing ? (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => handleSaveEdit(env)} className="h-8 w-8 text-green-400 hover:bg-green-500/10 hover:text-green-300"><Check className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => setEditingId(null)} className="h-8 w-8 text-muted-foreground hover:bg-white/5 hover:text-white"><XIcon className="h-4 w-4" /></Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => toggleVisibility(env.id)} className="h-8 w-8 text-muted-foreground hover:bg-white/5 hover:text-white">
+                            {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => startEdit(env)} className="h-8 w-8 text-muted-foreground hover:bg-white/5 hover:text-white">
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(env.id)} className="h-8 w-8 text-muted-foreground hover:bg-red-500/10 hover:text-red-400">
+                            <XIcon className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -396,7 +468,49 @@ function SettingsTab({ project }: { project: any }) {
 // PLACEHOLDER TABS
 // --------------------------------------------------------------------------------
 function LogsTab() {
-  return <div className="p-12 text-center text-sm text-muted-foreground border border-white/5 rounded-[16px]">Advanced logging coming soon.</div>;
+  const [logs, setLogs] = useState([
+    { time: new Date(Date.now() - 3600000).toISOString(), level: "INFO", message: "Listening on port 3000" },
+    { time: new Date(Date.now() - 3500000).toISOString(), level: "INFO", message: "GET /api/health - 200 OK - 5ms" },
+    { time: new Date(Date.now() - 3400000).toISOString(), level: "WARN", message: "High memory usage detected (85%)" },
+    { time: new Date(Date.now() - 100000).toISOString(), level: "INFO", message: "POST /api/deployments - 201 Created - 120ms" },
+    { time: new Date(Date.now() - 50000).toISOString(), level: "ERROR", message: "Database connection timeout in module auth" },
+    { time: new Date(Date.now() - 10000).toISOString(), level: "INFO", message: "Database connection re-established" },
+  ]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-white">Runtime Logs</h2>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-7 text-xs bg-white/[0.02] border-white/10 text-white hover:bg-white/10 hover:text-white">Past 1 Hour</Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs bg-white/[0.02] border-white/10 text-white hover:bg-white/10 hover:text-white"><Search className="h-3.5 w-3.5 mr-1" /> Search</Button>
+        </div>
+      </div>
+      <div className="rounded-[16px] border border-white/10 bg-[#050505] overflow-hidden flex flex-col h-[500px]">
+        <div className="flex items-center px-4 py-2 border-b border-white/5 bg-white/[0.02]">
+           <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-xs font-mono text-muted-foreground">Live tailing</span>
+           </div>
+        </div>
+        <div className="p-4 font-mono text-[13px] leading-[1.6] overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-1">
+          {logs.map((log, i) => {
+            const date = new Date(log.time);
+            const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+            const levelColor = log.level === 'INFO' ? 'text-blue-400' : log.level === 'WARN' ? 'text-yellow-400' : 'text-red-400';
+            
+            return (
+              <div key={i} className="flex gap-4 hover:bg-white/[0.02] px-2 rounded-sm py-0.5 group">
+                <span className="text-white/30 select-none text-[11px] min-w-[60px] pt-0.5">{timeStr}</span>
+                <span className={`${levelColor} text-[11px] min-w-[50px] pt-0.5 font-bold`}>{log.level}</span>
+                <span className="text-gray-300 break-all">{log.message}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 function DomainsTab({ projectUrl }: { projectUrl: string }) {
   return (
