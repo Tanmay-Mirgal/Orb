@@ -1,10 +1,10 @@
-import { getProjectByName } from "@/features/projects/actions";
+import { getProjectBySlug } from "@/features/projects/actions";
 import { notFound } from "next/navigation";
 import { ProjectDetailsClient } from "@/features/projects/components/ProjectDetailsClient";
 
 export default async function ProjectDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = await params;
-  const projectData = await getProjectByName(resolvedParams.slug);
+  const projectData = await getProjectBySlug(resolvedParams.slug);
 
   if (!projectData) {
     notFound();

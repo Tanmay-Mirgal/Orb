@@ -27,7 +27,7 @@ export async function getUserProjects() {
   return userProjects;
 }
 
-export async function getProjectByName(name: string) {
+export async function getProjectBySlug(slug: string) {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -43,7 +43,7 @@ export async function getProjectByName(name: string) {
     })
     .from(projects)
     .leftJoin(projectRepositories, eq(projects.id, projectRepositories.projectId))
-    .where(eq(projects.name, name))
+    .where(eq(projects.slug, slug))
     .limit(1);
 
   if (!projectRecord || projectRecord.length === 0) {
