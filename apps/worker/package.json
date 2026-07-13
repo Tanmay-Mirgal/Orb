@@ -11,12 +11,14 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/dockerode": "^4.0.1",
     "@types/node": "^26.1.1",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "adm-zip": "^0.5.18",
     "bullmq": "^5.79.3",
     "database": "^1.0.0",
     "dockerode": "^5.0.1",

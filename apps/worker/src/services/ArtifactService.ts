@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import AdmZip from 'adm-zip';
 import { StorageClient } from 'storage';
 
 export class ArtifactService {
@@ -28,12 +28,10 @@ export class ArtifactService {
     const objectName = `deployments/${deploymentId}.zip`;
     const zipPath = path.join(workspacePath, `${deploymentId}.zip`);
 
-    // Use system zip command - reliable, memory-efficient, always available on Linux
-    try {
-      execSync(`zip -r "${zipPath}" .`, { cwd: sourcePath, stdio: 'pipe' });
-    } catch (e: any) {
-      throw new Error(`Failed to create zip: ${e.message}`);
-    }
+    // Use adm-zip (pure Node.js) — no system zip command required
+    const zip = new AdmZip();
+    zip.addLocalFolder(sourcePath);
+    zip.writeZip(zipPath);
 
     // Upload the zip file as a stream
     const zipStream = fs.createReadStream(zipPath);
