@@ -12,8 +12,19 @@ const port = process.env.PORT || 8000;
 const routingService = new RoutingService();
 const staticService = new StaticService();
 const runnerService = new RunnerService(staticService);
+const ORB_ROOT_DOMAIN = 'orb.tanmaymirgal.dev';
 
 console.log('🚀 Orb Edge Proxy initializing...');
+
+app.get('/_caddy/allow', (req, res) => {
+  const domain = String(req.query.domain ?? '').toLowerCase().replace(/\.$/, '');
+  if (domain === ORB_ROOT_DOMAIN || domain.endsWith(`.${ORB_ROOT_DOMAIN}`)) {
+    res.sendStatus(200);
+    return;
+  }
+
+  res.sendStatus(403);
+});
 
 app.use(async (req, res, next) => {
   try {

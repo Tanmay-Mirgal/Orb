@@ -1,7 +1,6 @@
 {
     on_demand_tls {
-        interval 2m
-        burst 5
+        permission http http://127.0.0.1:8000/_caddy/allow
     }
 }
 
