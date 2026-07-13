@@ -36,12 +36,14 @@ export class RunnerService {
     // 3. Spawn process
     console.log(`Starting dynamic deployment ${deploymentId} on port ${port}...`);
     
-    // For Next.js standalone, the entry point is server.js
-    // Alternatively, if it's a basic node app, it might be index.js.
-    // Assuming standard Next.js standalone output for MVP.
-    const serverJsPath = path.join(deployDir, 'standalone', 'server.js');
+    // For Next.js standalone, the entry point is server.js at the root of the uploaded artifact (since we upload .next/standalone directly)
+    let serverJsPath = path.join(deployDir, 'server.js');
     
-    // Fallback: If standalone doesn't exist, try running npm start
+    // Fallback: If it's nested (e.g. older deployment logic)
+    if (!require('fs').existsSync(serverJsPath)) {
+      serverJsPath = path.join(deployDir, 'standalone', 'server.js');
+    }
+    
     const cmd = 'node';
     const args = [serverJsPath];
     

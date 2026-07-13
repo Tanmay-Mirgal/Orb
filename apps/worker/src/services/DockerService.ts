@@ -80,10 +80,34 @@ fi
 
     let buildActionScript = '';
     if (buildCommand && buildCommand.trim() !== '') {
-      buildActionScript = `
+      if (framework === 'Next.js') {
+        buildActionScript = `
+echo "[build] Configuring Next.js standalone mode..."
+if [ -f "next.config.js" ]; then
+  if ! grep -q "standalone" next.config.js; then
+    echo "module.exports.output = 'standalone';" >> next.config.js
+  fi
+elif [ -f "next.config.mjs" ]; then
+  if ! grep -q "standalone" next.config.mjs; then
+    echo "export const output = 'standalone';" >> next.config.mjs
+  fi
+else
+  echo "module.exports = { output: 'standalone' };" > next.config.js
+fi
+echo "[build] Running build..."
+${buildCommand} 2>&1
+echo "[build] Finalizing Next.js standalone server..."
+mkdir -p .next/standalone/public
+mkdir -p .next/standalone/.next/static
+cp -r public/* .next/standalone/public/ 2>/dev/null || true
+cp -r .next/static/* .next/standalone/.next/static/ 2>/dev/null || true
+`;
+      } else {
+        buildActionScript = `
 echo "[build] Running build..."
 ${buildCommand} 2>&1
 `;
+      }
     }
 
     const buildScriptContent = `#!/bin/sh

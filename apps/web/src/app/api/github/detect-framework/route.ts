@@ -88,7 +88,7 @@ export async function GET(req: Request) {
 
       if (deps["next"]) {
         framework = "Next.js";
-        outputDirectory = ".next";
+        outputDirectory = ".next/standalone";
       } else if (deps["react"] || deps["react-dom"] || deps["vite"]) {
         framework = "React.js";
         outputDirectory = deps["vite"] ? "dist" : "build";

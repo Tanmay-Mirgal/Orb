@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import archiver from 'archiver';
+const archiver = require('archiver');
 import { StorageClient } from 'storage';
 
 export class ArtifactService {

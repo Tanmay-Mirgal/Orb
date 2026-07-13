@@ -295,7 +295,7 @@ export default function NewProjectPage() {
                         setFramework(val);
                         if (val === "Next.js") {
                           setBuildCmd("npm run build");
-                          setOutputDir(".next");
+                          setOutputDir(".next/standalone");
                           setInstallCmd("npm install");
                         } else if (val === "React.js") {
                           setBuildCmd("npm run build");
