@@ -287,7 +287,36 @@ export default function NewProjectPage() {
                       <label className="text-sm font-medium">Framework Preset</label>
                       {isDetecting && <span className="text-xs text-muted-foreground animate-pulse">Auto-detecting...</span>}
                     </div>
-                    <Input value={framework} onChange={e => setFramework(e.target.value)} />
+                    <select 
+                      className="w-full h-9 bg-secondary/50 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border focus:ring-1 focus:ring-border transition-all"
+                      value={framework} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setFramework(val);
+                        if (val === "Next.js") {
+                          setBuildCmd("npm run build");
+                          setOutputDir(".next");
+                          setInstallCmd("npm install");
+                        } else if (val === "React.js") {
+                          setBuildCmd("npm run build");
+                          setOutputDir("dist");
+                          setInstallCmd("npm install");
+                        } else if (val === "Node.js") {
+                          setBuildCmd("");
+                          setOutputDir(".");
+                          setInstallCmd("npm install");
+                        } else if (val === "Flask") {
+                          setBuildCmd("");
+                          setOutputDir(".");
+                          setInstallCmd("pip install -r requirements.txt");
+                        }
+                      }}
+                    >
+                      <option value="Next.js">Next.js</option>
+                      <option value="React.js">React.js</option>
+                      <option value="Node.js">Node.js</option>
+                      <option value="Flask">Flask</option>
+                    </select>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Root Directory</label>

@@ -42,60 +42,65 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No GitHub connection found" }, { status: 400 });
     }
 
-    // 2. Fetch package.json from GitHub
-    const githubRes = await fetch(
+    // 2. Try fetching package.json
+    let packageJsonStr = "";
+    let isNode = false;
+    let isFlask = false;
+
+    const pkgRes = await fetch(
       `https://api.github.com/repos/${repoFullName}/contents/${packageJsonPath}`,
-      {
-        headers: {
-          Authorization: `Bearer ${githubAccount.accessToken}`,
-          Accept: "application/vnd.github.v3+json",
-        },
-      }
+      { headers: { Authorization: `Bearer ${githubAccount.accessToken}`, Accept: "application/vnd.github.v3+json" } }
     );
 
-    if (!githubRes.ok) {
-      if (githubRes.status === 404) {
-        return NextResponse.json({ 
-          success: true, 
-          framework: "Other", 
-          buildCommand: "npm run build", 
-          outputDirectory: "dist",
-          installCommand: "npm install"
-        });
+    if (pkgRes.ok) {
+      const fileData = await pkgRes.json();
+      packageJsonStr = Buffer.from(fileData.content, 'base64').toString('utf-8');
+      isNode = true;
+    } else {
+      // 3. If no package.json, check for requirements.txt for Flask
+      const reqPath = rootDir ? `${rootDir}/requirements.txt` : "requirements.txt";
+      const reqRes = await fetch(
+        `https://api.github.com/repos/${repoFullName}/contents/${reqPath}`,
+        { headers: { Authorization: `Bearer ${githubAccount.accessToken}`, Accept: "application/vnd.github.v3+json" } }
+      );
+      if (reqRes.ok) {
+        isFlask = true;
       }
-      return NextResponse.json({ error: "Failed to fetch from GitHub" }, { status: githubRes.status });
     }
 
-    const fileData = await githubRes.json();
-    
-    // GitHub API returns content as base64
-    const packageJsonStr = Buffer.from(fileData.content, 'base64').toString('utf-8');
-    const packageJson = JSON.parse(packageJsonStr);
-
-    const deps = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
-    const scripts = packageJson.scripts || {};
-
     let framework = "Node.js";
-    let buildCommand = scripts.build ? "npm run build" : "";
-    let outputDirectory = "dist";
-    let installCommand = "npm install"; // Default
+    let buildCommand = "";
+    let outputDirectory = ".";
+    let installCommand = "";
 
-    // Simple Framework Detection Logic
-    if (deps["next"]) {
-      framework = "Next.js";
-      outputDirectory = ".next";
-    } else if (deps["vite"]) {
-      framework = "Vite";
-      outputDirectory = "dist";
-    } else if (deps["@angular/core"]) {
-      framework = "Angular";
-      outputDirectory = "dist/app";
-    } else if (deps["vue"]) {
-      framework = "Vue";
-      outputDirectory = "dist";
-    } else if (deps["react"] || deps["react-dom"]) {
-      framework = "React";
-      outputDirectory = "build"; // Create React App default
+    if (isFlask) {
+      framework = "Flask";
+      buildCommand = ""; // No build for standard flask
+      installCommand = "pip install -r requirements.txt";
+      outputDirectory = ".";
+    } else if (isNode) {
+      const packageJson = JSON.parse(packageJsonStr);
+      const deps = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
+      const scripts = packageJson.scripts || {};
+
+      installCommand = "npm install";
+      buildCommand = scripts.build ? "npm run build" : "";
+
+      if (deps["next"]) {
+        framework = "Next.js";
+        outputDirectory = ".next";
+      } else if (deps["react"] || deps["react-dom"] || deps["vite"]) {
+        framework = "React.js";
+        outputDirectory = deps["vite"] ? "dist" : "build";
+      } else {
+        framework = "Node.js";
+        outputDirectory = ".";
+      }
+    } else {
+      // Default to Node.js if nothing found
+      framework = "Node.js";
+      installCommand = "npm install";
+      outputDirectory = ".";
     }
 
     return NextResponse.json({

@@ -82,6 +82,7 @@ export async function processDeploymentJob(job: Job<JobPayload>) {
       outputDirectory,
       payload.environmentVariables || {},
       rootDirectory,
+      payload.framework || 'Node.js',
       (msg) => { log(msg).catch(console.error); }
     );
 

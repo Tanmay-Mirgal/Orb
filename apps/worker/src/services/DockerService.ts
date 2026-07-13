@@ -12,12 +12,12 @@ export class DockerService {
     this.docker = new Docker();
   }
 
-  private async ensureImage(): Promise<void> {
+  private async ensureImage(image: string): Promise<void> {
     try {
-      await this.docker.getImage(IMAGE).inspect();
+      await this.docker.getImage(image).inspect();
     } catch {
       await new Promise<void>((resolve, reject) => {
-        this.docker.pull(IMAGE, (err: any, stream: any) => {
+        this.docker.pull(image, (err: any, stream: any) => {
           if (err) return reject(err);
           this.docker.modem.followProgress(stream, (err: any) => {
             if (err) return reject(err);
@@ -28,11 +28,11 @@ export class DockerService {
     }
   }
 
-  private async ensureCacheVolume(): Promise<void> {
+  private async ensureCacheVolume(volumeName: string): Promise<void> {
     try {
-      await this.docker.getVolume(NPM_CACHE_VOLUME).inspect();
+      await this.docker.getVolume(volumeName).inspect();
     } catch {
-      await this.docker.createVolume({ Name: NPM_CACHE_VOLUME });
+      await this.docker.createVolume({ Name: volumeName });
     }
   }
 
@@ -43,27 +43,28 @@ export class DockerService {
     outputDirectory: string = '.next',
     envVars: Record<string, string> = {},
     rootDirectory: string = './',
+    framework: string = 'Node.js',
     logCallback: (log: string) => void
   ): Promise<boolean> {
+    const isFlask = framework === 'Flask';
+    const dockerImage = isFlask ? 'python:3.10-alpine' : 'node:20-alpine';
+    const cacheVolume = isFlask ? 'orb-pip-cache' : 'orb-npm-cache';
+    const cacheTarget = isFlask ? '/root/.cache/pip' : '/npm-cache';
+
     // Inline env exports
     const envExports = Object.entries(envVars)
       .map(([k, v]) => `export ${k}="${v}"`)
       .join('\n');
 
-    // Optimized build script:
-    // - Uses npm ci for faster installs when package-lock.json exists
-    // - Sets npm cache to persistent volume
-    const buildScriptContent = `#!/bin/sh
-set -e
+    let installScript = '';
+    if (isFlask) {
+      installScript = `
+echo "[build] Installing dependencies..."
+${installCommand} 2>&1
+`;
+    } else {
+      installScript = `
 export NPM_CONFIG_CACHE=/npm-cache
-
-cd /workspace
-if [ "${rootDirectory}" != "./" ] && [ "${rootDirectory}" != "." ] && [ "${rootDirectory}" != "" ]; then
-  cd ${rootDirectory}
-fi
-
-${envExports}
-
 echo "[build] Installing dependencies..."
 if [ -f "package-lock.json" ]; then
   npm ci --prefer-offline 2>&1
@@ -74,9 +75,29 @@ elif [ -f "pnpm-lock.yaml" ]; then
 else
   ${installCommand} 2>&1
 fi
+`;
+    }
 
+    let buildActionScript = '';
+    if (buildCommand && buildCommand.trim() !== '') {
+      buildActionScript = `
 echo "[build] Running build..."
 ${buildCommand} 2>&1
+`;
+    }
+
+    const buildScriptContent = `#!/bin/sh
+set -e
+
+cd /workspace
+if [ "${rootDirectory}" != "./" ] && [ "${rootDirectory}" != "." ] && [ "${rootDirectory}" != "" ]; then
+  cd ${rootDirectory}
+fi
+
+${envExports}
+${installScript}
+${buildActionScript}
+
 echo "[build] Fixing permissions..."
 chmod -R 777 . 2>&1 || true
 echo "[build] Done!"
@@ -86,23 +107,23 @@ echo "[build] Done!"
     fs.writeFileSync(scriptPath, buildScriptContent, { mode: 0o755 });
 
     logCallback('[docker] Preparing build environment...');
-    await this.ensureImage();
-    await this.ensureCacheVolume();
+    await this.ensureImage(dockerImage);
+    await this.ensureCacheVolume(cacheVolume);
 
     const absoluteWorkspacePath = path.resolve(workspacePath);
     const bindPath = absoluteWorkspacePath.replace(/\\/g, '/');
 
     try {
       const container = await this.docker.createContainer({
-        Image: IMAGE,
+        Image: dockerImage,
         Cmd: ['/bin/sh', '/workspace/.orb-build.sh'],
         HostConfig: {
           Binds: [`${bindPath}:/workspace`],
           Mounts: [
             {
               Type: 'volume',
-              Source: NPM_CACHE_VOLUME,
-              Target: '/npm-cache',
+              Source: cacheVolume,
+              Target: cacheTarget,
             }
           ],
           AutoRemove: false,
