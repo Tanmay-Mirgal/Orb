@@ -200,9 +200,7 @@ echo "[build] Done!"
             }
           ],
           AutoRemove: false,
-          // Resource limits for stability
-          Memory: 1024 * 1024 * 1024, // 1GB
-          NanoCpus: 2 * 1e9, // 2 CPUs
+          // Resource limits removed to allow full build
         },
         Env: Object.entries(envVars).map(([k, v]) => `${k}=${v}`),
         WorkingDir: '/workspace',
