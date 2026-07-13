@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { 
@@ -11,63 +11,39 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatDistanceToNow } from "date-fns";
 
-// Mock data for domains
-const mockDomains = [
-  {
-    id: "1",
-    name: "orb.dev",
-    isPrimary: true,
-    projectId: "proj_1",
-    projectName: "Orb Platform",
-    status: "active",
-    ssl: "active",
-    dns: "propagated",
-    cdn: "proxied",
-    registrar: "Cloudflare",
-    region: "global",
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
-    lastVerified: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    traffic: Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, requests: Math.floor(Math.random() * 5000) + 1000 }))
-  },
-  {
-    id: "2",
-    name: "api.orb.dev",
-    isPrimary: false,
-    projectId: "proj_1",
-    projectName: "Orb API",
-    status: "active",
-    ssl: "active",
-    dns: "propagated",
-    cdn: "proxied",
-    registrar: "Cloudflare",
-    region: "global",
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 300).toISOString(),
-    lastVerified: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-    traffic: Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, requests: Math.floor(Math.random() * 15000) + 5000 }))
-  },
-  {
-    id: "3",
-    name: "docs.orb.dev",
-    isPrimary: false,
-    projectId: "proj_2",
-    projectName: "Orb Docs",
-    status: "pending",
-    ssl: "pending",
-    dns: "propagating",
-    cdn: "dns_only",
-    registrar: "Vercel",
-    region: "iad1",
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
-    lastVerified: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    traffic: Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, requests: Math.floor(Math.random() * 500) }))
-  }
-];
-
 export function DomainsContentClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<any>(null);
+  const [domains, setDomains] = useState<any[]>([]);
 
-  const filteredDomains = mockDomains.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  useEffect(() => {
+    fetch('/api/domains')
+      .then(res => res.json())
+      .then(data => {
+        if (data.domains) {
+          const mapped = data.domains.map((d: any) => ({
+            id: d.domain,
+            name: d.domain,
+            isPrimary: false,
+            projectId: d.projectId,
+            projectName: d.projectName || 'Unknown',
+            status: d.status, // active, pending, error
+            ssl: d.status === 'active' ? 'active' : 'pending',
+            dns: d.status === 'active' ? 'propagated' : 'propagating',
+            cdn: d.status === 'active' ? 'proxied' : 'dns_only',
+            registrar: 'External',
+            region: 'global',
+            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
+            lastVerified: new Date().toISOString(),
+            traffic: Array.from({ length: 24 }).map((_, i) => ({ time: `${i}:00`, requests: Math.floor(Math.random() * 5000) }))
+          }));
+          setDomains(mapped);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  const filteredDomains = domains.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     <div className="flex flex-col gap-8 pb-20 max-w-7xl mx-auto">
@@ -85,7 +61,7 @@ export function DomainsContentClient() {
 
         {/* Global Metrics Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard title="Connected Domains" value={mockDomains.length} icon={Globe} color="text-foreground" />
+          <MetricCard title="Connected Domains" value={domains.length} icon={Globe} color="text-foreground" />
           <MetricCard title="Active SSL Certs" value="2" icon={ShieldCheck} color="text-success" />
           <MetricCard title="DNS Health" value="100%" icon={Activity} color="text-accent" />
           <MetricCard title="Issues Detected" value="1" icon={AlertCircle} color="text-warning" alert />

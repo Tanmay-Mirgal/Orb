@@ -79,6 +79,7 @@ export const deployments = pgTable('deployments', {
 export const domains = pgTable('domains', {
   domain: varchar('domain', { length: 255 }).notNull().primaryKey(),
   projectId: uuid('projectId').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  status: varchar('status', { length: 50 }).notNull().default('pending'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

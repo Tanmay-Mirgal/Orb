@@ -138,7 +138,7 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
             {activeTab === "env" && <EnvironmentTab projectId={project.id} />}
             {activeTab === "settings" && <SettingsTab project={project} />}
             {activeTab === "logs" && <LogsTab />}
-            {activeTab === "domains" && <DomainsTab projectUrl={projectUrl} />}
+            {activeTab === "domains" && <DomainsTab projectId={project.id} projectUrl={projectUrl} />}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -512,20 +512,136 @@ function LogsTab() {
     </div>
   );
 }
-function DomainsTab({ projectUrl }: { projectUrl: string }) {
+function DomainsTab({ projectId, projectUrl }: { projectId: string, projectUrl: string }) {
+  const [domains, setDomains] = useState<any[]>([]);
+  const [newDomain, setNewDomain] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+  const [isVerifying, setIsVerifying] = useState<string | null>(null);
+
+  const fetchDomains = async () => {
+    try {
+      const res = await fetch(`/api/projects/domains?projectId=${projectId}`);
+      const data = await res.json();
+      if (data.domains) setDomains(data.domains);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchDomains();
+  }, [projectId]);
+
+  const handleAddDomain = async () => {
+    if (!newDomain.trim()) return;
+    setIsAdding(true);
+    try {
+      await fetch('/api/projects/domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, domain: newDomain })
+      });
+      setNewDomain("");
+      fetchDomains();
+    } catch (e) {}
+    setIsAdding(false);
+  };
+
+  const handleVerify = async (domain: string) => {
+    setIsVerifying(domain);
+    try {
+      await fetch('/api/projects/domains/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, domain })
+      });
+      fetchDomains();
+    } catch (e) {}
+    setIsVerifying(null);
+  };
+
+  const handleDelete = async (domain: string) => {
+    try {
+      await fetch(`/api/projects/domains?projectId=${projectId}&domain=${domain}`, { method: 'DELETE' });
+      fetchDomains();
+    } catch (e) {}
+  };
+
+  const cnameTarget = process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev';
+
   return (
-    <div className="rounded-[16px] border border-white/10 bg-white/[0.02] overflow-hidden">
-      <table className="w-full text-sm text-left">
-        <thead className="border-b border-white/5 text-muted-foreground text-xs uppercase tracking-wider">
-          <tr><th className="px-6 py-4 font-medium">Domain</th><th className="px-6 py-4 font-medium">Status</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="px-6 py-4 font-medium text-white">{projectUrl.replace('https://', '')}</td>
-            <td className="px-6 py-4"><span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span></td>
-          </tr>
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col md:flex-row gap-4 items-end">
+        <div className="flex-1 w-full">
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Add Custom Domain</label>
+          <input 
+            type="text" 
+            placeholder="e.g. www.mywebsite.com" 
+            value={newDomain}
+            onChange={e => setNewDomain(e.target.value)}
+            className="w-full bg-white/[0.02] border border-white/10 rounded-[8px] h-10 px-3 text-sm focus:outline-none focus:border-white/30 text-white"
+          />
+        </div>
+        <Button 
+          onClick={handleAddDomain} 
+          disabled={isAdding || !newDomain}
+          className="h-10 bg-white text-black hover:bg-white/90"
+        >
+          {isAdding ? 'Adding...' : 'Add'}
+        </Button>
+      </div>
+
+      <div className="rounded-[16px] border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-4">
+          {/* Default Domain */}
+          <div className="flex items-center justify-between p-4 bg-[#050505] border border-white/5 rounded-[12px]">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-white">{projectUrl.replace('https://', '')}</span>
+              <span className="text-xs text-muted-foreground">Default Orb Domain</span>
+            </div>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/20">Active</span>
+          </div>
+
+          {/* Custom Domains */}
+          {domains.map((d) => (
+            <div key={d.domain} className="flex flex-col p-4 bg-[#050505] border border-white/5 rounded-[12px] gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-white">{d.domain}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  {d.status === 'active' ? (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/20">Valid</span>
+                  ) : d.status === 'error' ? (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20">Invalid</span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">Pending</span>
+                  )}
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-white" onClick={() => handleVerify(d.domain)} disabled={isVerifying === d.domain}>
+                    <RefreshCcw className={`h-3 w-3 ${isVerifying === d.domain ? 'animate-spin' : ''}`} />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-300 hover:bg-red-400/10" onClick={() => handleDelete(d.domain)}>
+                    <XIcon className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+
+              {d.status !== 'active' && (
+                <div className="bg-white/[0.02] border border-white/5 rounded-lg p-3 flex flex-col gap-2">
+                  <span className="text-xs text-muted-foreground">To verify this domain, please add the following DNS record to your domain provider:</span>
+                  <div className="flex items-center gap-4 bg-[#050505] p-2 rounded-md font-mono text-xs text-white overflow-x-auto">
+                    <span className="text-muted-foreground w-12">Type:</span> <span>CNAME</span>
+                    <span className="text-muted-foreground w-12 ml-4">Name:</span> <span>{d.domain.split('.')[0] || '@'}</span>
+                    <span className="text-muted-foreground w-12 ml-4">Value:</span> <span>{cnameTarget}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground mt-1">Alternatively, you can use an A record pointing to <span className="font-mono text-white/70">13.207.186.41</span></span>
+                </div>
+              )}
+            </div>
+          ))}
+          {domains.length === 0 && (
+            <div className="text-center py-8 text-sm text-muted-foreground">No custom domains added yet.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
