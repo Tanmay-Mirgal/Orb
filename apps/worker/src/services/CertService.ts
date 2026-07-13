@@ -21,8 +21,14 @@ export class CertService {
     projectName: string,
     log: (msg: string) => Promise<void>
   ): Promise<boolean> {
-    const hostname = `${projectName}.${this.baseDomain}`;
-    const url = `https://${hostname}`;
+    // Sanitize: lowercase + strip leading/trailing dashes from each DNS label
+    const sanitizedName = projectName
+      .toLowerCase()
+      .split('.')
+      .map(label => label.replace(/^-+|-+$/g, ''))
+      .filter(Boolean)
+      .join('.');
+    const hostname = `${sanitizedName}.${this.baseDomain}`;
 
     await log(`[cert] Provisioning SSL certificate for ${hostname}...`);
 

@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, ilike } from 'drizzle-orm';
 import { projects, domains, deployments } from 'database';
 
 const sql = postgres(process.env.DATABASE_URL || 'postgresql://orb:password@localhost:5432/orb');
@@ -17,13 +17,14 @@ export class RoutingService {
 
     if (hostname.endsWith(`.${baseDomain}`)) {
       const projectName = hostname.replace(`.${baseDomain}`, '');
-      const projectResult = await db.select().from(projects).where(eq(projects.name, projectName)).limit(1);
+      // Use ilike for case-insensitive match — browser URLs are lowercase but DB names may have uppercase
+      const projectResult = await db.select().from(projects).where(ilike(projects.name, projectName)).limit(1);
       if (projectResult.length > 0) {
         projectId = projectResult[0].id;
       }
     } else if (hostname.endsWith('.localhost')) {
       const projectName = hostname.replace('.localhost', '');
-      const projectResult = await db.select().from(projects).where(eq(projects.name, projectName)).limit(1);
+      const projectResult = await db.select().from(projects).where(ilike(projects.name, projectName)).limit(1);
       if (projectResult.length > 0) {
         projectId = projectResult[0].id;
       }
