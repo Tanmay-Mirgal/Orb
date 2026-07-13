@@ -16,11 +16,6 @@ export async function GET() {
     }
 
     // Fetch the GitHub access token for this user
-    const userAccount = await db.query.accounts?.findFirst({
-      where: eq(accounts.userId, session.user.id)
-    });
-    
-    // Fallback if db.query is not configured with relations
     const accountRecords = await db
       .select()
       .from(accounts)

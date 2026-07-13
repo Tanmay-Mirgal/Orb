@@ -54,6 +54,8 @@ export const projects = pgTable('projects', {
   framework: varchar('framework', { length: 255 }), 
   buildCommand: varchar('build_command', { length: 255 }),
   outputDirectory: varchar('output_directory', { length: 255 }),
+  rootDirectory: varchar('root_directory', { length: 255 }),
+  installCommand: varchar('install_command', { length: 255 }),
 });
 
 export const projectRepositories = pgTable('project_repositories', {

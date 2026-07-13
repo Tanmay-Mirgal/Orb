@@ -17,11 +17,11 @@ const worker = new Worker('deployments', processDeploymentJob, {
 });
 
 worker.on('completed', (job) => {
-  console.log(\`✅ Job \${job.id} has completed successfully\`);
+  console.log(`✅ Job ${job.id} has completed successfully`);
 });
 
 worker.on('failed', (job, err) => {
-  console.log(\`❌ Job \${job?.id} has failed: \${err.message}\`);
+  console.log(`❌ Job ${job?.id} has failed: ${err.message}`);
 });
 
 worker.on('error', (err) => {

@@ -2,11 +2,38 @@ import Docker from 'dockerode';
 import * as fs from 'fs';
 import * as path from 'path';
 
+const NPM_CACHE_VOLUME = 'orb-npm-cache';
+const IMAGE = 'node:20-alpine';
+
 export class DockerService {
   private docker: Docker;
 
   constructor() {
     this.docker = new Docker();
+  }
+
+  private async ensureImage(): Promise<void> {
+    try {
+      await this.docker.getImage(IMAGE).inspect();
+    } catch {
+      await new Promise<void>((resolve, reject) => {
+        this.docker.pull(IMAGE, (err: any, stream: any) => {
+          if (err) return reject(err);
+          this.docker.modem.followProgress(stream, (err: any) => {
+            if (err) return reject(err);
+            resolve();
+          });
+        });
+      });
+    }
+  }
+
+  private async ensureCacheVolume(): Promise<void> {
+    try {
+      await this.docker.getVolume(NPM_CACHE_VOLUME).inspect();
+    } catch {
+      await this.docker.createVolume({ Name: NPM_CACHE_VOLUME });
+    }
   }
 
   async buildProject(
@@ -15,47 +42,77 @@ export class DockerService {
     installCommand: string = 'npm install',
     outputDirectory: string = '.next',
     envVars: Record<string, string> = {},
+    rootDirectory: string = './',
     logCallback: (log: string) => void
   ): Promise<boolean> {
+    // Inline env exports
+    const envExports = Object.entries(envVars)
+      .map(([k, v]) => `export ${k}="${v}"`)
+      .join('\n');
+
+    // Optimized build script:
+    // - Uses npm ci for faster installs when package-lock.json exists
+    // - Sets npm cache to persistent volume
     const buildScriptContent = `#!/bin/sh
 set -e
-echo "[docker] Starting build process..."
+export NPM_CONFIG_CACHE=/npm-cache
+
 cd /workspace
-echo "[docker] Injecting environment variables..."
-${Object.entries(envVars).map(([k, v]) => `export ${k}="${v}"`).join('\n')}
-echo "[docker] Running install command: ${installCommand}"
-${installCommand}
-echo "[docker] Running build command: ${buildCommand}"
-${buildCommand}
-echo "[docker] Build completed successfully."
+if [ "${rootDirectory}" != "./" ] && [ "${rootDirectory}" != "." ] && [ "${rootDirectory}" != "" ]; then
+  cd ${rootDirectory}
+fi
+
+${envExports}
+
+echo "[build] Installing dependencies..."
+if [ -f "package-lock.json" ]; then
+  npm ci --prefer-offline 2>&1
+elif [ -f "yarn.lock" ]; then
+  yarn install --frozen-lockfile 2>&1
+elif [ -f "pnpm-lock.yaml" ]; then
+  npx --yes pnpm install --frozen-lockfile 2>&1
+else
+  ${installCommand} 2>&1
+fi
+
+echo "[build] Running build..."
+${buildCommand} 2>&1
+echo "[build] Done!"
 `;
-    
+
     const scriptPath = path.join(workspacePath, '.orb-build.sh');
     fs.writeFileSync(scriptPath, buildScriptContent, { mode: 0o755 });
 
-    logCallback('[docker] Preparing build container...');
-    
-    // Ensure node:20-alpine is available locally (in real-world you might pull it first)
-    // await this.docker.pull('node:20-alpine');
-    
-    // Resolve absolute path for volume mount (works differently on Windows/Linux)
+    logCallback('[docker] Preparing build environment...');
+    await this.ensureImage();
+    await this.ensureCacheVolume();
+
     const absoluteWorkspacePath = path.resolve(workspacePath);
-    // On windows docker desktop, paths like D:\... need to be formatted correctly if using WSL2, but dockerode handles standard paths reasonably well if Docker Desktop is configured for it.
-    // For safety, we'll convert backslashes to forward slashes for the bind mount string if needed, or let dockerode handle it.
     const bindPath = absoluteWorkspacePath.replace(/\\/g, '/');
 
     try {
       const container = await this.docker.createContainer({
-        Image: 'node:20-alpine',
+        Image: IMAGE,
         Cmd: ['/bin/sh', '/workspace/.orb-build.sh'],
         HostConfig: {
           Binds: [`${bindPath}:/workspace`],
+          Mounts: [
+            {
+              Type: 'volume',
+              Source: NPM_CACHE_VOLUME,
+              Target: '/npm-cache',
+            }
+          ],
           AutoRemove: false,
+          // Resource limits for stability
+          Memory: 1024 * 1024 * 1024, // 1GB
+          NanoCpus: 2 * 1e9, // 2 CPUs
         },
         Env: Object.entries(envVars).map(([k, v]) => `${k}=${v}`),
+        WorkingDir: '/workspace',
       });
 
-      logCallback('[docker] Starting container...');
+      logCallback('[docker] Starting build container...');
       await container.start();
 
       const stream = await container.logs({
@@ -65,22 +122,16 @@ echo "[docker] Build completed successfully."
       });
 
       stream.on('data', (chunk: Buffer) => {
-        // Docker multiplexed stream parsing (stdout/stderr mix)
-        // Usually, the first 8 bytes are the header: [type, 0, 0, 0, size1, size2, size3, size4]
-        // But for simplicity in this implementation, we just convert to string.
         const output = chunk.toString('utf8');
-        // Clean up some weird docker stream chars
-        const cleanOutput = output.replace(/[\x00-\x09\x0B-\x0C\x0E-\x1F\x7F]/g, '');
-        if (cleanOutput.trim()) {
+        const cleanOutput = output.replace(/[\x00-\x09\x0B-\x0C\x0E-\x1F\x7F]/g, '').trim();
+        if (cleanOutput) {
           logCallback(cleanOutput);
         }
       });
 
       const waitResult = await container.wait();
-      
-      // Cleanup container
       await container.remove();
-      
+
       return waitResult.StatusCode === 0;
     } catch (error: any) {
       logCallback(`[error] Docker build failed: ${error.message}`);

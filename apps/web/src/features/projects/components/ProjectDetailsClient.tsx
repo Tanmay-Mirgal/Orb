@@ -56,8 +56,10 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline">
-            <Globe className="mr-2 h-4 w-4" /> Visit Site
+          <Button variant="outline" asChild>
+            <a href={`http://${project.name}.localhost:8000`} target="_blank" rel="noopener noreferrer">
+              <Globe className="mr-2 h-4 w-4" /> Visit Site
+            </a>
           </Button>
           <Button onClick={handleDeploy} disabled={isDeploying || !repository}>
             {isDeploying ? <RefreshCcw className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
@@ -101,13 +103,30 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
 
 function OverviewTab({ deploymentId, project, repository }: { deploymentId: string, project: any, repository: any }) {
   const [logs, setLogs] = useState<string[]>([]);
+  const [activeDeploymentId, setActiveDeploymentId] = useState<string>(deploymentId);
   
   useEffect(() => {
-    if (!deploymentId) return;
+    if (deploymentId) {
+      setActiveDeploymentId(deploymentId);
+    } else {
+      // Fetch latest deployment
+      fetch(`/api/deployments?projectId=${project.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if(data.deployments && data.deployments.length > 0) {
+            setActiveDeploymentId(data.deployments[0].id);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [deploymentId, project.id]);
+
+  useEffect(() => {
+    if (!activeDeploymentId) return;
     
     const fetchLogs = async () => {
       try {
-        const res = await fetch(`/api/deployments/${deploymentId}/logs`);
+        const res = await fetch(`/api/deployments/${activeDeploymentId}/logs`);
         const data = await res.json();
         if (data.logs) {
           setLogs(data.logs);
@@ -120,7 +139,7 @@ function OverviewTab({ deploymentId, project, repository }: { deploymentId: stri
     fetchLogs();
     const interval = setInterval(fetchLogs, 2000);
     return () => clearInterval(interval);
-  }, [deploymentId]);
+  }, [activeDeploymentId]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -153,10 +172,10 @@ function OverviewTab({ deploymentId, project, repository }: { deploymentId: stri
             <CardTitle>Build Logs</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md bg-black border border-border/40 p-4 font-mono text-sm text-muted-foreground h-64 overflow-y-auto flex flex-col-reverse">
+            <div className="rounded-md bg-black border border-border/40 p-4 font-mono text-sm text-muted-foreground h-64 overflow-y-auto flex flex-col">
               <div className="flex flex-col gap-1">
                 {logs.length === 0 ? (
-                  <div>Waiting for logs... {deploymentId ? '' : '(No active deployment session in view)'}</div>
+                  <div>Waiting for logs... {!activeDeploymentId && '(No active deployment found)'}</div>
                 ) : (
                   logs.map((log, i) => <div key={i}>{log}</div>)
                 )}
@@ -234,16 +253,69 @@ function DeploymentsTab({ projectId }: { projectId: string }) {
 }
 
 function EnvironmentTab({ projectId }: { projectId: string }) {
+  const [envVars, setEnvVars] = useState<any[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+
+  const fetchEnvVars = async () => {
+    try {
+      const res = await fetch(`/api/projects/env?projectId=${projectId}`);
+      const data = await res.json();
+      if (data.envVars) setEnvVars(data.envVars);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchEnvVars();
+  }, [projectId]);
+
+  const handleAdd = async () => {
+    if (!newKey || !newValue) return;
+    setIsAdding(true);
+    try {
+      await fetch(`/api/projects/env?projectId=${projectId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: newKey, value: newValue })
+      });
+      setNewKey('');
+      setNewValue('');
+      fetchEnvVars();
+    } catch (e) {
+      console.error(e);
+    }
+    setIsAdding(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await fetch(`/api/projects/env?projectId=${projectId}&id=${id}`, {
+        method: 'DELETE'
+      });
+      fetchEnvVars();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return (
     <Card>
-      <CardHeader className="flex flex-row justify-between items-start">
+      <CardHeader className="flex flex-col sm:flex-row justify-between items-start">
         <div>
           <CardTitle>Environment Variables</CardTitle>
           <CardDescription>Securely store secrets and configuration for your deployments.</CardDescription>
         </div>
-        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Variable</Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
+        <div className="flex items-center gap-4">
+          <input type="text" placeholder="KEY (e.g. DATABASE_URL)" value={newKey} onChange={e => setNewKey(e.target.value)} className="flex-1 h-10 bg-secondary/30 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border font-mono" />
+          <input type="text" placeholder="VALUE" value={newValue} onChange={e => setNewValue(e.target.value)} className="flex-1 h-10 bg-secondary/30 border border-border/50 rounded-md px-3 text-sm focus:outline-none focus:border-border font-mono" />
+          <Button onClick={handleAdd} disabled={isAdding || !newKey || !newValue}><Plus className="mr-2 h-4 w-4" /> Add Variable</Button>
+        </div>
+
         <div className="rounded-md border border-border/50 overflow-hidden">
           <table className="w-full text-sm text-left">
             <thead className="bg-secondary/30 text-muted-foreground border-b border-border/50">
@@ -254,9 +326,13 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
               </tr>
             </thead>
             <tbody>
-              {["DATABASE_URL", "API_KEY", "NEXT_PUBLIC_APP_URL"].map((key, i) => (
-                <tr key={i} className="border-b border-border/20 last:border-0 hover:bg-secondary/10">
-                  <td className="px-4 py-3 font-medium font-mono">{key}</td>
+              {envVars.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">No environment variables configured.</td>
+                </tr>
+              ) : envVars.map((env, i) => (
+                <tr key={env.id || i} className="border-b border-border/20 last:border-0 hover:bg-secondary/10">
+                  <td className="px-4 py-3 font-medium font-mono">{env.key}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">••••••••••••••••</span>
@@ -264,8 +340,9 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"><Copy className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"><Eye className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(env.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 1C5.22386 1 5 1.22386 5 1.5C5 1.77614 5.22386 2 5.5 2H9.5C9.77614 2 10 1.77614 10 1.5C10 1.22386 9.77614 1 9.5 1H5.5ZM3 3.5C2.72386 3.5 2.5 3.72386 2.5 4C2.5 4.27614 2.72386 4.5 3 4.5H12C12.2761 4.5 12.5 4.27614 12.5 4C12.5 3.72386 12.2761 3.5 12 3.5H3ZM3.5 5.5C3.22386 5.5 3 5.72386 3 6V12.5C3 13.3284 3.67157 14 4.5 14H10.5C11.3284 14 12 13.3284 12 12.5V6C12 5.72386 11.7761 5.5 11.5 5.5H3.5Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"></path></svg>
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -278,6 +355,25 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
 }
 
 function SettingsTab({ project }: { project: any }) {
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this project? This action cannot be undone.')) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        window.location.href = '/dashboard';
+      } else {
+        alert('Failed to delete project');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error deleting project');
+    }
+    setIsDeleting(false);
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <Card>
@@ -315,7 +411,9 @@ function SettingsTab({ project }: { project: any }) {
               <div className="font-medium text-foreground">Delete Project</div>
               <div className="text-sm text-muted-foreground mt-1">This action cannot be undone. All deployments and domains will be permanently deleted.</div>
             </div>
-            <Button variant="destructive">Delete Project</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? 'Deleting...' : 'Delete Project'}
+            </Button>
           </div>
         </CardContent>
       </Card>

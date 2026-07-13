@@ -34,7 +34,7 @@ export class RunnerService {
     const port = await getPort();
 
     // 3. Spawn process
-    console.log(\`Starting dynamic deployment \${deploymentId} on port \${port}...\`);
+    console.log(`Starting dynamic deployment ${deploymentId} on port ${port}...`);
     
     // For Next.js standalone, the entry point is server.js
     // Alternatively, if it's a basic node app, it might be index.js.
@@ -54,11 +54,11 @@ export class RunnerService {
       }
     });
 
-    child.stdout.on('data', (data) => console.log(\`[SSR:\${deploymentId}] \${data}\`));
-    child.stderr.on('data', (data) => console.error(\`[SSR:\${deploymentId}] \${data}\`));
+    child.stdout.on('data', (data) => console.log(`[SSR:${deploymentId}] ${data}`));
+    child.stderr.on('data', (data) => console.error(`[SSR:${deploymentId}] ${data}`));
 
     child.on('close', (code) => {
-      console.log(\`[SSR:\${deploymentId}] exited with code \${code}\`);
+      console.log(`[SSR:${deploymentId}] exited with code ${code}`);
       this.runningDeployments.delete(deploymentId);
     });
 
@@ -73,7 +73,7 @@ export class RunnerService {
   async handleRequest(req: express.Request, res: express.Response, deploymentId: string) {
     try {
       const port = await this.ensureRunning(deploymentId);
-      this.proxy.web(req, res, { target: \`http://localhost:\${port}\` });
+      this.proxy.web(req, res, { target: `http://localhost:${port}` });
     } catch (err) {
       console.error('Failed to start deployment:', err);
       res.status(500).send('Internal Server Error: Failed to start dynamic deployment');

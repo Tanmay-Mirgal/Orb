@@ -28,8 +28,12 @@ export default function NewProjectPage() {
   // Form State
   const [isDeploying, setIsDeploying] = useState(false);
   const [framework, setFramework] = useState("Next.js");
-  const [outputDir, setOutputDir] = useState(".next");
+  const [rootDir, setRootDir] = useState("./");
   const [buildCmd, setBuildCmd] = useState("npm run build");
+  const [installCmd, setInstallCmd] = useState("npm install");
+  const [outputDir, setOutputDir] = useState(".next");
+  const [envVars, setEnvVars] = useState([{ key: "", value: "" }]);
+  const [showEnvVars, setShowEnvVars] = useState(false);
 
   useEffect(() => {
     // Only fetch if a project type was selected
@@ -50,12 +54,48 @@ export default function NewProjectPage() {
       });
   }, [projectType]);
 
+  // Auto-detect framework
+  const [isDetecting, setIsDetecting] = useState(false);
+  useEffect(() => {
+    if (!selectedRepo) return;
+
+    const detectFramework = async () => {
+      setIsDetecting(true);
+      try {
+        const res = await fetch(`/api/github/detect-framework?repo=${encodeURIComponent(selectedRepo.full_name)}&rootDir=${encodeURIComponent(rootDir)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setFramework(data.framework);
+            setBuildCmd(data.buildCommand);
+            setOutputDir(data.outputDirectory);
+            setInstallCmd(data.installCommand);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to detect framework:", err);
+      } finally {
+        setIsDetecting(false);
+      }
+    };
+
+    const timeout = setTimeout(detectFramework, 500);
+    return () => clearTimeout(timeout);
+  }, [selectedRepo, rootDir]);
+
   const filteredRepos = repos.filter(repo => repo.name.toLowerCase().includes(search.toLowerCase()));
 
   const handleDeploy = async () => {
     if (!selectedRepo) return;
     setIsDeploying(true);
     
+    const validEnvVars = envVars.reduce((acc, curr) => {
+      if (curr.key.trim() && curr.value.trim()) {
+        acc[curr.key.trim()] = curr.value.trim();
+      }
+      return acc;
+    }, {} as Record<string, string>);
+
     try {
       // 1. Create Project
       const projectRes = await fetch("/api/projects", {
@@ -69,6 +109,8 @@ export default function NewProjectPage() {
           framework: framework,
           buildCommand: buildCmd,
           outputDirectory: outputDir,
+          rootDirectory: rootDir,
+          installCommand: installCmd,
         })
       });
       const projectData = await projectRes.json();
@@ -87,6 +129,9 @@ export default function NewProjectPage() {
           branch: "main",
           buildCommand: buildCmd,
           outputDirectory: outputDir,
+          rootDirectory: rootDir,
+          installCommand: installCmd,
+          envVars: validEnvVars,
         })
       });
       
@@ -99,6 +144,24 @@ export default function NewProjectPage() {
       console.error(error);
       setIsDeploying(false);
     }
+  };
+
+  const addEnvVar = () => {
+    setEnvVars([...envVars, { key: "", value: "" }]);
+  };
+
+  const updateEnvVar = (index: number, field: "key" | "value", value: string) => {
+    const newVars = [...envVars];
+    newVars[index][field] = value;
+    setEnvVars(newVars);
+  };
+
+  const removeEnvVar = (index: number) => {
+    const newVars = envVars.filter((_, i) => i !== index);
+    if (newVars.length === 0) {
+      newVars.push({ key: "", value: "" });
+    }
+    setEnvVars(newVars);
   };
 
   return (
@@ -220,16 +283,70 @@ export default function NewProjectPage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Framework Preset</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Framework Preset</label>
+                      {isDetecting && <span className="text-xs text-muted-foreground animate-pulse">Auto-detecting...</span>}
+                    </div>
                     <Input value={framework} onChange={e => setFramework(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Build Command</label>
-                    <Input value={buildCmd} onChange={e => setBuildCmd(e.target.value)} />
+                    <label className="text-sm font-medium">Root Directory</label>
+                    <Input value={rootDir} onChange={e => setRootDir(e.target.value)} placeholder="./" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Output Directory</label>
-                    <Input value={outputDir} onChange={e => setOutputDir(e.target.value)} />
+
+                  <div className="pt-4 border-t border-border/40">
+                    <h3 className="text-sm font-semibold mb-4">Build & Development Settings</h3>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">Build Command</label>
+                        <Input value={buildCmd} onChange={e => setBuildCmd(e.target.value)} placeholder="npm run build" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">Output Directory</label>
+                        <Input value={outputDir} onChange={e => setOutputDir(e.target.value)} placeholder=".next, build, public" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">Install Command</label>
+                        <Input value={installCmd} onChange={e => setInstallCmd(e.target.value)} placeholder="npm install, yarn install" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border/40">
+                    <div 
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => setShowEnvVars(!showEnvVars)}
+                    >
+                      <h3 className="text-sm font-semibold">Environment Variables</h3>
+                      <span className="text-muted-foreground">{showEnvVars ? "▲" : "▼"}</span>
+                    </div>
+                    
+                    {showEnvVars && (
+                      <div className="mt-4 space-y-3">
+                        {envVars.map((envVar, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Input 
+                              placeholder="KEY (e.g. DATABASE_URL)" 
+                              value={envVar.key} 
+                              onChange={(e) => updateEnvVar(index, "key", e.target.value)} 
+                              className="font-mono text-sm"
+                            />
+                            <Input 
+                              placeholder="VALUE" 
+                              value={envVar.value} 
+                              onChange={(e) => updateEnvVar(index, "value", e.target.value)} 
+                              className="font-mono text-sm"
+                            />
+                            <Button variant="ghost" size="icon" onClick={() => removeEnvVar(index)} className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive">
+                              ×
+                            </Button>
+                          </div>
+                        ))}
+                        <Button variant="outline" size="sm" onClick={addEnvVar} className="w-full border-dashed">
+                          <Plus className="mr-2 h-4 w-4" /> Add Variable
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

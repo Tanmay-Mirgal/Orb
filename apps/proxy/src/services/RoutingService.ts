@@ -20,6 +20,12 @@ export class RoutingService {
       if (projectResult.length > 0) {
         projectId = projectResult[0].id;
       }
+    } else if (hostname.endsWith('.localhost')) {
+      const projectName = hostname.replace('.localhost', '');
+      const projectResult = await db.select().from(projects).where(eq(projects.name, projectName)).limit(1);
+      if (projectResult.length > 0) {
+        projectId = projectResult[0].id;
+      }
     } else {
       const domainResult = await db.select().from(domains).where(eq(domains.domain, hostname)).limit(1);
       if (domainResult.length > 0) {

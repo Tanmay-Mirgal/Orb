@@ -15,6 +15,8 @@ export interface JobPayload {
   framework?: string;
   buildCommand?: string;
   outputDirectory?: string;
+  rootDirectory?: string;
+  installCommand?: string;
   environmentVariables: Record<string, string>;
 }
 
@@ -26,6 +28,8 @@ export interface Project {
   framework?: string;
   buildCommand?: string;
   outputDirectory?: string;
+  rootDirectory?: string;
+  installCommand?: string;
 }
 
 export interface Deployment {

@@ -23,16 +23,16 @@ app.use(async (req, res, next) => {
     const resolution = await routingService.resolveHost(host);
     
     if (!resolution) {
-      res.status(404).send(\`
+      res.status(404).send(`
         <html>
           <body style="font-family: system-ui; background: #09090b; color: white; display: flex; align-items: center; justify-content: center; height: 100vh;">
             <div style="text-align: center;">
               <h1>Deployment Not Found</h1>
-              <p style="color: #a1a1aa;">The domain <strong>\${host}</strong> is not configured or has no active deployments.</p>
+              <p style="color: #a1a1aa;">The domain <strong>${host}</strong> is not configured or has no active deployments.</p>
             </div>
           </body>
         </html>
-      \`);
+      `);
       return;
     }
 
@@ -48,5 +48,5 @@ app.use(async (req, res, next) => {
 });
 
 app.listen(port, () => {
-  console.log(\`🌍 Edge proxy listening on port \${port}\`);
+  console.log(`🌍 Edge proxy listening on port ${port}`);
 });

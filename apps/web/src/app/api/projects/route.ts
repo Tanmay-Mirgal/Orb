@@ -1,44 +1,55 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { projects, projectRepositories } from 'database';
+import { projects, projectRepositories, environmentVariables } from 'database';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
 export async function POST(req: Request) {
   try {
     const session = await auth.api.getSession({
-      headers: await headers(),
+      headers: req.headers
     });
-
-    if (!session?.user) {
+    
+    if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await req.json();
-    const { name, githubRepositoryName, githubRepositoryId, branch, framework, buildCommand, outputDirectory } = body;
+    const { name, githubRepositoryName, githubRepositoryId, branch, framework, buildCommand, outputDirectory, rootDirectory, installCommand, envVars } = body;
 
-    if (!name || !githubRepositoryName) {
+    if (!name || !githubRepositoryName || !githubRepositoryId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Insert project record
-    const insertResult = await db.insert(projects).values({
+    const [project] = await db.insert(projects).values({
       name,
       userId: session.user.id,
-      framework: framework || 'Next.js',
-      buildCommand: buildCommand || 'npm run build',
-      outputDirectory: outputDirectory || '.next',
+      framework,
+      buildCommand,
+      outputDirectory,
+      rootDirectory,
+      installCommand,
     }).returning();
 
-    const project = insertResult[0];
-
-    // Insert repository record
     await db.insert(projectRepositories).values({
       projectId: project.id,
-      githubRepositoryId: githubRepositoryId || 0,
+      githubRepositoryId,
       githubRepositoryName,
-      branch: branch || 'main'
+      branch: branch || 'main',
     });
+
+    if (envVars && typeof envVars === 'object') {
+      const entries = Object.entries(envVars);
+      if (entries.length > 0) {
+        await db.insert(environmentVariables).values(
+          entries.map(([key, value]) => ({
+            projectId: project.id,
+            key: key,
+            value: String(value)
+          }))
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, project });
   } catch (error) {

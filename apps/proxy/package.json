@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "dev": "tsx src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -19,7 +20,16 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "adm-zip": "^0.5.18",
     "database": "^1.0.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "get-port": "^7.2.0",
+    "http-proxy": "^1.18.1",
+    "mime-types": "^3.0.2",
+    "minio": "^8.0.7",
+    "postgres": "^3.4.9",
     "shared": "^1.0.0",
     "storage": "^1.0.0"
   }

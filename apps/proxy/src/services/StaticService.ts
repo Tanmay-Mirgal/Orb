@@ -30,9 +30,16 @@ export class StaticService {
     }
 
     // Download and unzip
-    const zipPath = path.join(this.cacheDir, \`\${deploymentId}.zip\`);
+    const zipPath = path.join(this.cacheDir, `${deploymentId}.zip`);
     try {
-      await this.storage.downloadArtifact('orb-artifacts', \`deployments/\${deploymentId}.zip\`, zipPath);
+      const stream = await this.storage.downloadArtifact('orb-artifacts', `deployments/${deploymentId}.zip`);
+      
+      await new Promise((resolve, reject) => {
+        const fileStream = fs.createWriteStream(zipPath);
+        stream.pipe(fileStream);
+        stream.on('error', reject);
+        fileStream.on('finish', resolve);
+      });
       
       const zip = new AdmZip(zipPath);
       zip.extractAllTo(deployCacheDir, true);
@@ -41,7 +48,7 @@ export class StaticService {
       fs.unlinkSync(zipPath);
       return deployCacheDir;
     } catch (e) {
-      console.error(\`Failed to cache artifact for \${deploymentId}:\`, e);
+      console.error(`Failed to cache artifact for ${deploymentId}:`, e);
       throw e;
     }
   }
@@ -69,6 +76,15 @@ export class StaticService {
       if (fs.existsSync(fullPath)) {
         const type = mime.lookup(fullPath) || 'application/octet-stream';
         res.setHeader('Content-Type', type);
+        
+        // Caching headers optimization
+        if (fullPath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else {
+          // Immutable assets (js, css, images, etc.) cache for 1 year
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+
         fs.createReadStream(fullPath).pipe(res);
       } else {
         res.status(404).send('Not Found');

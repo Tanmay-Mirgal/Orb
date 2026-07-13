@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import archiver from 'archiver';
+import * as archiverLib from 'archiver';
 import { StorageClient } from 'storage';
 
 export class ArtifactService {
@@ -17,18 +17,18 @@ export class ArtifactService {
     });
   }
 
-  async uploadArtifact(workspacePath: string, outputDirectory: string, deploymentId: string): Promise<string> {
+  async uploadArtifact(workspacePath: string, rootDirectory: string, outputDirectory: string, deploymentId: string): Promise<string> {
     return new Promise(async (resolve, reject) => {
       try {
         await this.storage.ensureBucket(this.bucketName);
         
-        const sourcePath = path.join(workspacePath, outputDirectory);
+        const sourcePath = path.join(workspacePath, rootDirectory, outputDirectory);
         if (!fs.existsSync(sourcePath)) {
           throw new Error(`Output directory ${outputDirectory} does not exist in workspace.`);
         }
 
         const objectName = `deployments/${deploymentId}.zip`;
-        const archive = archiver('zip', { zlib: { level: 9 } });
+        const archive = archiverLib.create('zip', { zlib: { level: 9 } });
         
         archive.on('error', (err) => reject(err));
         

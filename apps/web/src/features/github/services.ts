@@ -36,7 +36,7 @@ export class GitHubService {
       const octokit = await githubApp.getInstallationOctokit(installationId);
       
       // 4. Fetch repositories accessible to this installation
-      const { data: repos } = await octokit.rest.apps.listReposAccessibleToInstallation({
+      const { data: repos } = await (octokit as any).rest.apps.listReposAccessibleToInstallation({
         per_page: 100,
       });
 
@@ -55,14 +55,14 @@ export class GitHubService {
       const installationId = installations[0].id;
       const octokit = await githubApp.getInstallationOctokit(installationId);
       
-      const { data: branches } = await octokit.rest.repos.listBranches({
+      const { data: branches } = await (octokit as any).rest.repos.listBranches({
         owner: repoOwner,
         repo: repoName,
       });
       
       return { error: null, branches };
     } catch (error) {
-      console.error(\`Failed to fetch branches for \${repoOwner}/\${repoName}:\`, error);
+      console.error(`Failed to fetch branches for ${repoOwner}/${repoName}:`, error);
       return { error: "Failed to fetch branches", branches: [] };
     }
   }
