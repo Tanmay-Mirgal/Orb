@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Activity, Bell, Box, CreditCard, Database, Globe, LayoutDashboard, Plus, Search, Settings, Webhook } from "lucide-react";
 import Link from "next/link";
-
+import { UserProfile } from "@/components/UserProfile";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
@@ -33,15 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <div className="p-4 border-t border-border/40">
-          <div className="flex items-center gap-3 px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center">
-              U
-            </div>
-            <div className="flex-1 truncate text-sm">
-              <div className="font-medium">User Profile</div>
-              <div className="text-muted-foreground text-xs truncate">user@example.com</div>
-            </div>
-          </div>
+          <UserProfile />
         </div>
       </aside>
 
