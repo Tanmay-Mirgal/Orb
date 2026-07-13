@@ -1,7 +1,8 @@
 "use client";
 
-import { Box, Activity, Globe, Cpu } from "lucide-react";
+import { Box, Activity, Globe, Cpu, GitBranch, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 import { DashboardCharts } from "@/features/dashboard/components/DashboardCharts";
 
