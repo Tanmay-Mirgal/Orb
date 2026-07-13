@@ -13,9 +13,10 @@ export class RoutingService {
   async resolveHost(hostname: string): Promise<{ projectId: string; deploymentId: string; isStatic: boolean } | null> {
     // 1. Determine Project ID
     let projectId: string | null = null;
+    const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev';
 
-    if (hostname.endsWith('.orb.dev')) {
-      const projectName = hostname.replace('.orb.dev', '');
+    if (hostname.endsWith(`.${baseDomain}`)) {
+      const projectName = hostname.replace(`.${baseDomain}`, '');
       const projectResult = await db.select().from(projects).where(eq(projects.name, projectName)).limit(1);
       if (projectResult.length > 0) {
         projectId = projectResult[0].id;

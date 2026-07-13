@@ -1,0 +1,19 @@
+{
+    on_demand_tls {
+        interval 2m
+        burst 5
+    }
+}
+
+# The main dashboard
+orb.tanmaymirgal.dev {
+    reverse_proxy localhost:3000
+}
+
+# Deployed Projects (Dynamic subdomains)
+*.orb.tanmaymirgal.dev {
+    tls {
+        on_demand
+    }
+    reverse_proxy localhost:8000
+}

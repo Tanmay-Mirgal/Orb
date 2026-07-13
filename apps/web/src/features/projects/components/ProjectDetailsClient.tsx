@@ -57,7 +57,7 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" asChild>
-            <a href={`http://${project.name}.localhost:8000`} target="_blank" rel="noopener noreferrer">
+            <a href={`https://${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`} target="_blank" rel="noopener noreferrer">
               <Globe className="mr-2 h-4 w-4" /> Visit Site
             </a>
           </Button>
