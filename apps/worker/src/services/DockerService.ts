@@ -80,7 +80,9 @@ fi
 
     let buildActionScript = '';
     if (buildCommand && buildCommand.trim() !== '') {
-      if (framework === 'Next.js') {
+      // Auto-detect Next.js even if framework field is not set
+      const isNextJs = framework === 'Next.js';
+      if (isNextJs) {
         buildActionScript = `
 echo "[build] Configuring Next.js standalone mode..."
 node << 'NODEJS_EOF'
@@ -98,23 +100,20 @@ if (!configFile) {
   } else {
     const isEsm = configFile.endsWith('.ts') || configFile.endsWith('.mjs');
     if (isEsm) {
-      // Try to inject into const config = { ... }
       const injected = content.replace(
         /(\bconst\s+\w+\s*(?::\s*\w+(?:<\w+>)?\s*)?\s*=\s*\{)/,
-        "\$1\n  output: 'standalone',"
+        "$1\n  output: 'standalone',"
       );
       if (injected !== content) {
         fs.writeFileSync(configFile, injected);
       } else {
-        // Fallback: mutate before export default
         const mutated = content.replace(
           /export\s+default\s+(\w+)\s*;?/,
-          "\$1.output = 'standalone';\nexport default \$1;"
+          "$1.output = 'standalone';\nexport default $1;"
         );
         fs.writeFileSync(configFile, mutated);
       }
     } else {
-      // CJS: append module.exports.output
       content += "\nmodule.exports.output = 'standalone';\n";
       fs.writeFileSync(configFile, content);
     }
@@ -129,6 +128,59 @@ mkdir -p .next/standalone/public
 mkdir -p .next/standalone/.next/static
 cp -r public/* .next/standalone/public/ 2>/dev/null || true
 cp -r .next/static/* .next/standalone/.next/static/ 2>/dev/null || true
+`;
+      } else {
+        // Auto-detect Next.js from filesystem
+        buildActionScript = `
+echo "[build] Running build..."
+${buildCommand} 2>&1
+
+# Auto-detect Next.js: if next.config.* found, finalize standalone
+NEXT_CONFIG=$(ls next.config.ts next.config.mjs next.config.js next.config.cjs 2>/dev/null | head -1)
+if [ -n "$NEXT_CONFIG" ] || [ -d ".next" ]; then
+  echo "[build] Next.js detected - checking for standalone output..."
+  if [ ! -d ".next/standalone" ]; then
+    echo "[build] WARNING: .next/standalone not found. Rebuild with output:standalone configured."
+    echo "[build] Injecting standalone config and rebuilding..."
+    node << 'NODEJS_EOF'
+const fs = require('fs');
+const configFiles = ['next.config.ts', 'next.config.mjs', 'next.config.js', 'next.config.cjs'];
+const configFile = configFiles.find(f => fs.existsSync(f));
+if (!configFile) {
+  fs.writeFileSync('next.config.js', "module.exports = { output: 'standalone' };\n");
+} else {
+  let content = fs.readFileSync(configFile, 'utf8');
+  if (!content.includes('standalone')) {
+    const isEsm = configFile.endsWith('.ts') || configFile.endsWith('.mjs');
+    if (isEsm) {
+      const injected = content.replace(
+        /(\bconst\s+\w+\s*(?::\s*\w+(?:<\w+>)?\s*)?\s*=\s*\{)/,
+        "$1\n  output: 'standalone',"
+      );
+      if (injected !== content) {
+        fs.writeFileSync(configFile, injected);
+      } else {
+        const mutated = content.replace(
+          /export\s+default\s+(\w+)\s*;?/,
+          "$1.output = 'standalone';\nexport default $1;"
+        );
+        fs.writeFileSync(configFile, mutated);
+      }
+    } else {
+      content += "\nmodule.exports.output = 'standalone';\n";
+      fs.writeFileSync(configFile, content);
+    }
+    console.log('[build] Injected standalone - rebuilding...');
+  }
+}
+NODEJS_EOF
+    ${buildCommand} 2>&1
+  fi
+  mkdir -p .next/standalone/public
+  mkdir -p .next/standalone/.next/static
+  cp -r public/* .next/standalone/public/ 2>/dev/null || true
+  cp -r .next/static/* .next/standalone/.next/static/ 2>/dev/null || true
+fi
 `;
       } else {
         buildActionScript = `
