@@ -351,12 +351,44 @@ function EnvironmentTab({ projectId }: { projectId: string }) {
     } catch (e) {}
   };
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const paste = e.clipboardData.getData('text');
+    if (paste.includes('=')) {
+      e.preventDefault();
+      const lines = paste.split('\n');
+      const varsToAdd = [];
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const [k, ...valueParts] = trimmed.split('=');
+        const v = valueParts.join('=').replace(/^["'](.*)["']$/, '$1').trim();
+        if (k && v) {
+          varsToAdd.push({ key: k.trim(), value: v });
+        }
+      }
+      
+      if (varsToAdd.length > 0) {
+        try {
+          await fetch(`/api/projects/env?projectId=${projectId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ envVars: varsToAdd })
+          });
+          setNewKey('');
+          setNewValue('');
+          fetchEnvVars();
+        } catch (err) {}
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-[16px] border border-white/10 bg-white/[0.02] overflow-hidden">
         <div className="p-4 border-b border-white/10 flex flex-col md:flex-row gap-4 items-center">
-          <input type="text" placeholder="KEY" value={newKey} onChange={e => setNewKey(e.target.value)} className="w-full h-9 bg-[#050505] border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-white/30 font-mono text-white" />
-          <input type="password" placeholder="VALUE" value={newValue} onChange={e => setNewValue(e.target.value)} className="w-full h-9 bg-[#050505] border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-white/30 font-mono text-white" />
+          <input type="text" placeholder="KEY" value={newKey} onChange={e => setNewKey(e.target.value)} onPaste={handlePaste} className="w-full h-9 bg-[#050505] border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-white/30 font-mono text-white" />
+          <input type="password" placeholder="VALUE" value={newValue} onChange={e => setNewValue(e.target.value)} onPaste={handlePaste} className="w-full h-9 bg-[#050505] border border-white/10 rounded-md px-3 text-sm focus:outline-none focus:border-white/30 font-mono text-white" />
           <Button onClick={handleAdd} className="w-full md:w-auto h-9 bg-white text-black text-xs font-medium px-6">Add</Button>
         </div>
         <table className="w-full text-sm text-left">

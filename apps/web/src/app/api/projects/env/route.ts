@@ -33,6 +33,14 @@ export async function POST(req: Request) {
     if (!projectId) return NextResponse.json({ error: 'Missing projectId' }, { status: 400 });
 
     const body = await req.json();
+    
+    if (body.envVars && Array.isArray(body.envVars)) {
+      const newVars = await db.insert(environmentVariables).values(
+        body.envVars.map((ev: any) => ({ projectId, key: ev.key, value: ev.value }))
+      ).returning();
+      return NextResponse.json({ success: true, envVars: newVars });
+    }
+
     const { key, value } = body;
 
     if (!key || !value) return NextResponse.json({ error: 'Missing key or value' }, { status: 400 });

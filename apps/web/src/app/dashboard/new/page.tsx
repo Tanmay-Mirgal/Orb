@@ -167,6 +167,37 @@ export default function NewProjectPage() {
     setEnvVars(newVars);
   };
 
+  const handleEnvPaste = (e: React.ClipboardEvent<HTMLInputElement>, index: number) => {
+    const paste = e.clipboardData.getData('text');
+    // Basic heuristic: if it has '=' and multiple lines, or even a single line like KEY=value, parse it
+    if (paste.includes('=')) {
+      e.preventDefault();
+      const lines = paste.split('\n');
+      const newVars = [...envVars];
+      let currentIndex = index;
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const [key, ...valueParts] = trimmed.split('=');
+        const value = valueParts.join('=').replace(/^["'](.*)["']$/, '$1').trim();
+        
+        if (key && value) {
+          if (currentIndex < newVars.length) {
+            newVars[currentIndex] = { key: key.trim(), value };
+          } else {
+            newVars.push({ key: key.trim(), value });
+          }
+          currentIndex++;
+        }
+      }
+      
+      // If we replaced the current empty one, and we're at the end, maybe we need to append?
+      // newVars is already updated with all the pasted ones
+      setEnvVars(newVars);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto p-6 md:p-12 space-y-8">
       <div className="flex flex-col gap-2">
@@ -398,12 +429,14 @@ export default function NewProjectPage() {
                                   placeholder="KEY (e.g. DATABASE_URL)" 
                                   value={envVar.key} 
                                   onChange={(e) => updateEnvVar(index, "key", e.target.value)} 
+                                  onPaste={(e) => handleEnvPaste(e, index)}
                                   className="font-mono text-sm"
                                 />
                                 <Input 
                                   placeholder="VALUE" 
                                   value={envVar.value} 
                                   onChange={(e) => updateEnvVar(index, "value", e.target.value)} 
+                                  onPaste={(e) => handleEnvPaste(e, index)}
                                   className="font-mono text-sm"
                                 />
                                 <Button variant="ghost" size="icon" onClick={() => removeEnvVar(index)} className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive">
