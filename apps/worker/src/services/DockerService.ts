@@ -182,11 +182,6 @@ NODEJS_EOF
   cp -r .next/static/* .next/standalone/.next/static/ 2>/dev/null || true
 fi
 `;
-      } else {
-        buildActionScript = `
-echo "[build] Running build..."
-${buildCommand} 2>&1
-`;
       }
     }
 
