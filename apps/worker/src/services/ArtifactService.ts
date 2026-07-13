@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as archiverLib from 'archiver';
+import archiver from 'archiver';
 import { StorageClient } from 'storage';
 
 export class ArtifactService {
@@ -28,7 +28,7 @@ export class ArtifactService {
         }
 
         const objectName = `deployments/${deploymentId}.zip`;
-        const archive = archiverLib.create('zip', { zlib: { level: 9 } });
+        const archive = archiver('zip', { zlib: { level: 9 } });
         
         archive.on('error', (err) => reject(err));
         
