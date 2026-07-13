@@ -34,6 +34,8 @@ export default function NewProjectPage() {
   const [outputDir, setOutputDir] = useState(".next");
   const [envVars, setEnvVars] = useState([{ key: "", value: "" }]);
   const [showEnvVars, setShowEnvVars] = useState(false);
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkEnv, setBulkEnv] = useState('');
 
   useEffect(() => {
     // Only fetch if a project type was selected
@@ -352,28 +354,63 @@ export default function NewProjectPage() {
                     
                     {showEnvVars && (
                       <div className="mt-4 space-y-3">
-                        {envVars.map((envVar, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <Input 
-                              placeholder="KEY (e.g. DATABASE_URL)" 
-                              value={envVar.key} 
-                              onChange={(e) => updateEnvVar(index, "key", e.target.value)} 
-                              className="font-mono text-sm"
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs text-muted-foreground">Variables will be securely encrypted.</span>
+                          <Button variant="ghost" size="sm" onClick={() => setIsBulkMode(!isBulkMode)} className="h-8">
+                            {isBulkMode ? 'Switch to Single' : 'Switch to Bulk Paste'}
+                          </Button>
+                        </div>
+                        
+                        {isBulkMode ? (
+                          <div className="space-y-3">
+                            <textarea 
+                              className="w-full min-h-[150px] bg-secondary/30 border border-border/50 rounded-md p-3 text-sm focus:outline-none focus:border-border font-mono"
+                              placeholder={`KEY1=value1\nKEY2="value 2"\n# Comments are ignored`}
+                              value={bulkEnv}
+                              onChange={e => {
+                                setBulkEnv(e.target.value);
+                                const lines = e.target.value.split('\n');
+                                const newVars = [];
+                                for (const line of lines) {
+                                  const trimmed = line.trim();
+                                  if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+                                  const [key, ...valueParts] = trimmed.split('=');
+                                  const value = valueParts.join('=').replace(/^["'](.*)["']$/, '$1').trim();
+                                  if (key && value) {
+                                    newVars.push({ key: key.trim(), value });
+                                  }
+                                }
+                                if (newVars.length === 0) newVars.push({ key: '', value: '' });
+                                setEnvVars(newVars);
+                              }}
                             />
-                            <Input 
-                              placeholder="VALUE" 
-                              value={envVar.value} 
-                              onChange={(e) => updateEnvVar(index, "value", e.target.value)} 
-                              className="font-mono text-sm"
-                            />
-                            <Button variant="ghost" size="icon" onClick={() => removeEnvVar(index)} className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive">
-                              ×
-                            </Button>
                           </div>
-                        ))}
-                        <Button variant="outline" size="sm" onClick={addEnvVar} className="w-full border-dashed">
-                          <Plus className="mr-2 h-4 w-4" /> Add Variable
-                        </Button>
+                        ) : (
+                          <>
+                            {envVars.map((envVar, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <Input 
+                                  placeholder="KEY (e.g. DATABASE_URL)" 
+                                  value={envVar.key} 
+                                  onChange={(e) => updateEnvVar(index, "key", e.target.value)} 
+                                  className="font-mono text-sm"
+                                />
+                                <Input 
+                                  placeholder="VALUE" 
+                                  value={envVar.value} 
+                                  onChange={(e) => updateEnvVar(index, "value", e.target.value)} 
+                                  className="font-mono text-sm"
+                                />
+                                <Button variant="ghost" size="icon" onClick={() => removeEnvVar(index)} className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive">
+                                  ×
+                                </Button>
+                              </div>
+                            ))}
+                            <Button variant="outline" size="sm" onClick={addEnvVar} className="w-full border-dashed">
+                              <Plus className="mr-2 h-4 w-4" /> Add Variable
+                            </Button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
