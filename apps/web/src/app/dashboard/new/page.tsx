@@ -23,6 +23,7 @@ export default function NewProjectPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+  const [projectName, setProjectName] = useState("");
   const [projectType, setProjectType] = useState<"static" | "web" | null>(null);
   
   // Form State
@@ -104,7 +105,7 @@ export default function NewProjectPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: selectedRepo.name,
+          name: projectName,
           githubRepositoryName: selectedRepo.full_name,
           githubRepositoryId: selectedRepo.id,
           branch: "main",
@@ -139,7 +140,7 @@ export default function NewProjectPage() {
       
       const data = await res.json();
       if (data.success) {
-        const slug = projectData.project.name;
+        const slug = projectData.project.slug;
         router.push(`/dashboard/projects/${slug}`);
       }
     } catch (error) {
@@ -260,7 +261,7 @@ export default function NewProjectPage() {
                           </div>
                         </div>
                       </div>
-                      <Button onClick={() => setSelectedRepo(repo)} size="sm">
+                      <Button onClick={() => { setSelectedRepo(repo); setProjectName(repo.name); }} size="sm">
                         Import
                       </Button>
                     </div>
@@ -284,6 +285,10 @@ export default function NewProjectPage() {
                   <CardDescription>Review and modify the deployment settings for {selectedRepo.name}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Project Name</label>
+                    <Input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="my-awesome-project" />
+                  </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium">Framework Preset</label>

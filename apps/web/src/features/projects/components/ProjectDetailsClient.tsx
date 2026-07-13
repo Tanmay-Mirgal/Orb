@@ -32,7 +32,7 @@ export function ProjectDetailsClient({ project, repository }: { project: any, re
       .catch(console.error);
   }, [project.id]);
 
-  const projectUrl = `https://${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`;
+  const projectUrl = `https://${project.slug || project.name.toLowerCase()}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`;
 
   const handleDeploy = async () => {
     setIsDeploying(true);

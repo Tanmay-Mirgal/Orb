@@ -55,26 +55,42 @@ export function DashboardContentClient({ projectsData, userName }: { projectsDat
               <div className="p-8 text-center text-sm text-muted-foreground">No projects yet.</div>
             ) : (
               projectsData.map((data, i) => (
-                <Link 
-                  key={i} 
-                  href={`/dashboard/projects/${data.project.slug || data.project.name.toLowerCase()}`}
-                  className={`flex items-center justify-between p-4 hover:bg-white/[0.02] transition-colors ${i !== projectsData.length - 1 ? 'border-b border-white/5' : ''}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center">
+                <div key={i} className={`flex items-center justify-between p-3.5 hover:bg-white/[0.02] transition-colors ${i !== projectsData.length - 1 ? 'border-b border-white/5' : ''}`}>
+                  <div className="flex items-center gap-4">
+                    <div className="h-8 w-8 rounded-full bg-[#050505] border border-white/10 flex items-center justify-center shrink-0">
                       <span className="font-semibold text-xs text-white">{data.project.name.charAt(0).toUpperCase()}</span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-white">{data.project.name}</span>
-                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        {data.project.framework || 'Node.js'} • {formatDistanceToNow(new Date(data.project.createdAt))} ago
-                      </span>
+                      <Link href={`/dashboard/projects/${data.project.slug || data.project.name.toLowerCase()}`} className="text-sm font-medium text-white hover:underline decoration-white/30 underline-offset-4">
+                        {data.project.name}
+                      </Link>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                        <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" /> main</span>
+                        <span>•</span>
+                        <span>{formatDistanceToNow(new Date(data.project.createdAt))} ago</span>
+                        <span>•</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/5 text-white/70 border border-white/5">{data.project.framework || 'Next.js'}</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="h-1.5 w-1.5 rounded-full bg-green-500"></div>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-500 text-xs font-medium">
+                      <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></div> Ready
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground hover:text-white hover:bg-white/5" asChild>
+                        <Link href={`/dashboard/projects/${data.project.slug || data.project.name.toLowerCase()}`}>Deploy</Link>
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-white hover:bg-white/5" asChild>
+                        <a href={`https://${data.project.slug || data.project.name.toLowerCase()}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`} target="_blank" rel="noopener noreferrer">
+                          <ArrowUpRight className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    </div>
                   </div>
-                </Link>
+                </div>
               ))
             )}
           </div>

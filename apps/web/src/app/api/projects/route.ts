@@ -21,8 +21,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    const baseSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const uniqueSuffix = Math.random().toString(36).substring(2, 8);
+    const slug = `${baseSlug}-${uniqueSuffix}`;
+
     const [project] = await db.insert(projects).values({
       name,
+      slug,
       userId: session.user.id,
       framework,
       buildCommand,
