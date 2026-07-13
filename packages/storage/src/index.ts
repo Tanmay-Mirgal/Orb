@@ -1,5 +1,5 @@
 import * as Minio from 'minio';
-import { internal } from 'stream';
+import { Readable } from 'stream';
 
 export class StorageClient {
   private client: Minio.Client;
@@ -15,7 +15,7 @@ export class StorageClient {
     }
   }
 
-  async uploadArtifact(bucketName: string, objectName: string, stream: internal.Readable | Buffer | string, size?: number) {
+  async uploadArtifact(bucketName: string, objectName: string, stream: Readable | Buffer | string, size?: number) {
     await this.ensureBucket(bucketName);
     if (size) {
       await this.client.putObject(bucketName, objectName, stream as any, size);
@@ -24,7 +24,7 @@ export class StorageClient {
     }
   }
 
-  async downloadArtifact(bucketName: string, objectName: string): Promise<internal.Readable> {
+  async downloadArtifact(bucketName: string, objectName: string): Promise<Readable> {
     return await this.client.getObject(bucketName, objectName);
   }
 

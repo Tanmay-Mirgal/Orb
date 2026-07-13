@@ -40,8 +40,6 @@ export class RoutingService {
     const deploymentResult = await db.select()
       .from(deployments)
       .where(eq(deployments.projectId, projectId))
-      // In a real app we'd filter by status === 'SUCCESS', assuming all here are mock or verified
-      // .where(eq(deployments.status, 'SUCCESS')) // Need to add multiple where clauses
       .orderBy(desc(deployments.createdAt))
       .limit(1);
 

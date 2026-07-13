@@ -117,25 +117,24 @@ cp -r public/* .next/standalone/public/ 2>/dev/null || true
 cp -r .next/static/* .next/standalone/.next/static/ 2>/dev/null || true
 `;
       } else {
-        // Auto-detect Next.js from filesystem (when framework field is Node.js/default)
+        // Auto-detect Next.js from filesystem BEFORE building (single build, no double-build)
         buildActionScript = `
 echo "[build] Running build..."
-${buildCommand} 2>&1
-
 NEXT_CONFIG=$(ls next.config.ts next.config.mjs next.config.js next.config.cjs 2>/dev/null | head -1)
-if [ -n "$NEXT_CONFIG" ] || [ -d ".next" ]; then
-  echo "[build] Next.js detected - checking for standalone output..."
-  if [ ! -d ".next/standalone" ]; then
-    echo "[build] Injecting standalone config and rebuilding..."
-    node << 'NODEJS_EOF'
+if [ -n "$NEXT_CONFIG" ]; then
+  echo "[build] Next.js detected - ensuring standalone output before build..."
+  node << 'NODEJS_EOF'
 const fs = require('fs');
 const cfgs = ['next.config.ts','next.config.mjs','next.config.js','next.config.cjs'];
 const cfg = cfgs.find(function(f){ return fs.existsSync(f); });
 if (!cfg) {
   fs.writeFileSync('next.config.js', 'module.exports = { output: "standalone" };');
+  console.log('[build] Created next.config.js with standalone output.');
 } else {
   var c = fs.readFileSync(cfg, 'utf8');
-  if (!c.includes('standalone')) {
+  if (c.includes('standalone')) {
+    console.log('[build] standalone already set in ' + cfg);
+  } else {
     var m = c.match(/=[ ]*\\{/);
     if (m) {
       var idx = c.indexOf(m[0]) + m[0].length;
@@ -144,12 +143,13 @@ if (!cfg) {
       c = c + '; module.exports.output = "standalone";';
     }
     fs.writeFileSync(cfg, c);
-    console.log('[build] Injected standalone - rebuilding...');
+    console.log('[build] Injected standalone into ' + cfg);
   }
 }
 NODEJS_EOF
-    ${buildCommand} 2>&1
-  fi
+fi
+${buildCommand} 2>&1
+if [ -n "$NEXT_CONFIG" ] || [ -d ".next" ]; then
   mkdir -p .next/standalone/public
   mkdir -p .next/standalone/.next/static
   cp -r public/* .next/standalone/public/ 2>/dev/null || true

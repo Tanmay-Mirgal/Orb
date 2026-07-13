@@ -80,8 +80,6 @@ export async function GET(req: Request) {
     }
     
     // We import eq from drizzle-orm dynamically here or at top level
-    const { eq, desc } = require('drizzle-orm');
-    
     const projectDeployments = await db.select().from(deployments).where(eq(deployments.projectId, projectId)).orderBy(desc(deployments.createdAt));
     
     return NextResponse.json({ deployments: projectDeployments });

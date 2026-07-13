@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { StorageClient } from 'storage';
 
 export class ArtifactService {
@@ -17,32 +18,31 @@ export class ArtifactService {
   }
 
   async uploadArtifact(workspacePath: string, rootDirectory: string, outputDirectory: string, deploymentId: string): Promise<string> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        await this.storage.ensureBucket(this.bucketName);
-        
-        const sourcePath = path.join(workspacePath, rootDirectory, outputDirectory);
-        if (!fs.existsSync(sourcePath)) {
-          throw new Error(`Output directory ${outputDirectory} does not exist in workspace.`);
-        }
+    await this.storage.ensureBucket(this.bucketName);
 
-        const objectName = `deployments/${deploymentId}.zip`;
-        const archiverLib = require('archiver');
-        const archive = archiverLib('zip', { zlib: { level: 9 } });
-        
-        archive.on('error', (err) => reject(err));
-        
-        const uploadPromise = this.storage.uploadArtifact(this.bucketName, objectName, archive);
-        
-        archive.directory(sourcePath, false);
-        archive.finalize();
-        
-        await uploadPromise;
-        
-        resolve(objectName);
-      } catch (error) {
-        reject(error);
-      }
-    });
+    const sourcePath = path.join(workspacePath, rootDirectory, outputDirectory);
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error(`Output directory "${outputDirectory}" does not exist in workspace at: ${sourcePath}`);
+    }
+
+    const objectName = `deployments/${deploymentId}.zip`;
+    const zipPath = path.join(workspacePath, `${deploymentId}.zip`);
+
+    // Use system zip command - reliable, memory-efficient, always available on Linux
+    try {
+      execSync(`zip -r "${zipPath}" .`, { cwd: sourcePath, stdio: 'pipe' });
+    } catch (e: any) {
+      throw new Error(`Failed to create zip: ${e.message}`);
+    }
+
+    // Upload the zip file as a stream
+    const zipStream = fs.createReadStream(zipPath);
+    const zipSize = fs.statSync(zipPath).size;
+    await this.storage.uploadArtifact(this.bucketName, objectName, zipStream, zipSize);
+
+    // Cleanup temp zip
+    try { fs.unlinkSync(zipPath); } catch {}
+
+    return objectName;
   }
 }
