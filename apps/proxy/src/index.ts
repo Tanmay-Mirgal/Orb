@@ -3,8 +3,12 @@ import { RoutingService } from './services/RoutingService';
 import { StaticService } from './services/StaticService';
 import { RunnerService } from './services/RunnerService';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-dotenv.config();
+// Load .env from monorepo root (apps/proxy has no local .env)
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
+dotenv.config(); // fallback: also try local .env if it exists
+
 
 const app = express();
 const port = process.env.PORT || 8000;

@@ -2,8 +2,12 @@ import { Worker } from 'bullmq';
 import { processDeploymentJob } from './processor';
 import * as dotenv from 'dotenv';
 import Redis from 'ioredis';
+import * as path from 'path';
 
-dotenv.config();
+// Load .env from monorepo root (apps/worker has no local .env)
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
+dotenv.config(); // fallback: also try local .env if it exists
+
 
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null
