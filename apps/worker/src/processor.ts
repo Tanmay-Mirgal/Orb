@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { execSync } from 'child_process';
 import Redis from 'ioredis';
 
 const sql = postgres(process.env.DATABASE_URL || 'postgresql://orb:password@localhost:5432/orb');
@@ -38,9 +39,14 @@ export async function processDeploymentJob(job: Job<JobPayload>) {
   try {
     await log('[worker] Job picked up. Initializing workspace...');
     
-    // Clean up old workspace if it exists
+    // Clean up old workspace if it exists (Docker creates root-owned files, need sudo)
+    const forceCleanup = (p: string) => {
+      try { execSync(`sudo rm -rf "${p}"`, { stdio: 'ignore' }); } catch {
+        try { fs.rmSync(p, { recursive: true, force: true }); } catch {}
+      }
+    };
     if (fs.existsSync(workspacePath)) {
-      fs.rmSync(workspacePath, { recursive: true, force: true });
+      forceCleanup(workspacePath);
     }
     fs.mkdirSync(workspacePath, { recursive: true });
 
@@ -109,7 +115,7 @@ export async function processDeploymentJob(job: Job<JobPayload>) {
     // 6. Cleanup and Success
     await log('[worker] Cleaning up workspace...');
     if (fs.existsSync(workspacePath)) {
-      fs.rmSync(workspacePath, { recursive: true, force: true });
+      forceCleanup(workspacePath);
     }
 
     await db.update(deployments)
