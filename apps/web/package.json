@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npx --yes @dotenvx/dotenvx run -f ../../.env -- next dev",
-    "build": "npx --yes @dotenvx/dotenvx run -f ../../.env -- next build",
-    "start": "npx --yes @dotenvx/dotenvx run -f ../../.env -- next start",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
