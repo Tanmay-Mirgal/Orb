@@ -566,14 +566,21 @@ function DomainsTab({ projectId, projectUrl }: { projectId: string, projectUrl: 
     if (!newDomain.trim()) return;
     setIsAdding(true);
     try {
-      await fetch('/api/projects/domains', {
+      const res = await fetch('/api/projects/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, domain: newDomain })
       });
-      setNewDomain("");
-      fetchDomains();
-    } catch (e) {}
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed to add domain: " + (data.error || "Unknown error"));
+      } else {
+        setNewDomain("");
+        fetchDomains();
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    }
     setIsAdding(false);
   };
 
