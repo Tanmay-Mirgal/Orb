@@ -69,15 +69,8 @@ export class CertService {
           path: '/',
           method: 'GET',
           timeout: 8000,
-          // Don't verify cert — we're checking if Caddy is serving anything
-          rejectUnauthorized: false,
-          checkServerIdentity: (host, cert) => {
-            // If cert subject matches our hostname, it's valid
-            if (!cert || !cert.subject) {
-              return new Error('No cert yet');
-            }
-            return undefined;
-          },
+          // Properly verify cert — this is how we know cert is truly valid
+          rejectUnauthorized: true,
         },
         (res) => {
           resolve({ success: true, certError: false, connectionRefused: false, statusCode: res.statusCode });
@@ -97,10 +90,19 @@ export class CertService {
           code === 'ENOTFOUND' ||
           code === 'ETIMEDOUT'
         ) {
+          // Proxy/DNS not reachable
           resolve({ success: false, certError: false, connectionRefused: true });
+        } else if (
+          code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
+          code === 'ERR_TLS_CERT_ALTNAME_INVALID' ||
+          code === 'CERT_HAS_EXPIRED' ||
+          code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
+          err.message?.includes('certificate')
+        ) {
+          // Cert exists but is still wrong/being provisioned — keep retrying
+          resolve({ success: false, certError: true, connectionRefused: false });
         } else {
-          // SSL errors (UNABLE_TO_VERIFY_LEAF_SIGNATURE, ERR_TLS_CERT_ALTNAME_INVALID, etc.)
-          // mean Caddy is there but still provisioning the cert
+          // Unknown error — treat as cert not ready yet
           resolve({ success: false, certError: true, connectionRefused: false });
         }
       });
