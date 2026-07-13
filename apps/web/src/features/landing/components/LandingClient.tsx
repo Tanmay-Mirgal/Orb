@@ -157,8 +157,8 @@ function HeroSection({ session }: { session: any }) {
     <section className="relative pt-40 pb-20 md:pt-52 md:pb-32 px-6 w-full flex flex-col items-center justify-center min-h-screen">
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_0%,#000_70%,transparent_100%)]"></div>
-        <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[800px] rounded-full bg-[#4F7CFF] opacity-10 blur-[120px]"></div>
-        <div className="absolute left-1/4 top-1/4 h-[300px] w-[400px] rounded-full bg-purple-600 opacity-5 blur-[100px]"></div>
+        <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[800px] rounded-full bg-[white] opacity-10 blur-[120px]"></div>
+        <div className="absolute left-1/4 top-1/4 h-[300px] w-[400px] rounded-full bg-white opacity-5 blur-[100px]"></div>
       </div>
 
       <div className="relative z-10 flex flex-col items-center text-center max-w-5xl mx-auto">
@@ -166,7 +166,7 @@ function HeroSection({ session }: { session: any }) {
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-xs font-medium mb-8 bg-white/[0.03] backdrop-blur-md shadow-[0_0_20px_rgba(255,255,255,0.05)]"
         >
-          <span className="flex h-1.5 w-1.5 rounded-full bg-[#4F7CFF] mr-2 animate-pulse shadow-[0_0_10px_#4F7CFF]"></span>
+          <span className="flex h-1.5 w-1.5 rounded-full bg-[white] mr-2 animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.5)]"></span>
           <span className="text-white/80">AI Powered Cloud Platform</span>
         </motion.div>
 
@@ -175,7 +175,7 @@ function HeroSection({ session }: { session: any }) {
           className="text-6xl md:text-8xl font-extrabold tracking-tighter mb-6 leading-[1.1] bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50"
         >
           Deploy Anything.<br/>Scale Everything.<br/>
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4F7CFF] to-purple-400">Powered by AI.</span>
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-[white] to-white">Powered by AI.</span>
         </motion.h1>
 
         <motion.p 
@@ -239,14 +239,14 @@ function HeroSection({ session }: { session: any }) {
 function TerminalTypingEffect() {
   const lines = [
     { text: "$ git push origin main", delay: 0, color: "text-white" },
-    { text: "Building Orb Platform...", delay: 800, color: "text-[#4F7CFF]" },
+    { text: "Building Orb Platform...", delay: 800, color: "text-[white]" },
     { text: "✓ Detected Next.js framework", delay: 1500, color: "text-white/60" },
     { text: "✓ Provisioning isolated container", delay: 2000, color: "text-white/60" },
     { text: "✓ Installing dependencies", delay: 2800, color: "text-white/60" },
     { text: "✓ Running build output...", delay: 3500, color: "text-white/60" },
-    { text: "Deploying to Global Edge (iad1, sfo1, fra1)...", delay: 4500, color: "text-[#4F7CFF]" },
+    { text: "Deploying to Global Edge (iad1, sfo1, fra1)...", delay: 4500, color: "text-[white]" },
     { text: "✓ SSL Certificate provisioned", delay: 5200, color: "text-white/60" },
-    { text: "🚀 Live at https://orb.dev", delay: 6000, color: "text-green-400 font-bold" },
+    { text: "🚀 Live at https://orb.dev", delay: 6000, color: "text-white font-bold" },
   ];
 
   const [visibleLines, setVisibleLines] = useState<number>(0);
@@ -294,7 +294,7 @@ function BentoFeaturesSection() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 auto-rows-[300px]">
         <div className="md:col-span-2 lg:col-span-2 row-span-2 rounded-[24px] border border-white/10 bg-white/[0.02] p-8 flex flex-col justify-between overflow-hidden relative group hover:border-white/20 transition-colors">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#4F7CFF]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="absolute inset-0 bg-gradient-to-br from-[white]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative z-10">
             <div className="h-12 w-12 rounded-[12px] bg-white/10 flex items-center justify-center mb-6">
               <Globe className="h-6 w-6 text-white" />
@@ -304,16 +304,16 @@ function BentoFeaturesSection() {
           </div>
           <div className="relative z-10 w-full h-48 mt-8 border border-white/10 rounded-[12px] bg-[#0A0A0A] overflow-hidden flex items-center justify-center">
             <svg viewBox="0 0 400 200" className="w-full h-full opacity-30">
-              <path d="M50 80 Q 150 20 250 80 T 350 80" fill="none" stroke="#4F7CFF" strokeWidth="2" strokeDasharray="5,5" />
-              <circle cx="50" cy="80" r="4" fill="#4F7CFF" className="animate-pulse" />
-              <circle cx="250" cy="80" r="4" fill="#4F7CFF" className="animate-pulse" />
-              <circle cx="350" cy="80" r="4" fill="#4F7CFF" className="animate-pulse" />
+              <path d="M50 80 Q 150 20 250 80 T 350 80" fill="none" stroke="white" strokeWidth="2" strokeDasharray="5,5" />
+              <circle cx="50" cy="80" r="4" fill="white" className="animate-pulse" />
+              <circle cx="250" cy="80" r="4" fill="white" className="animate-pulse" />
+              <circle cx="350" cy="80" r="4" fill="white" className="animate-pulse" />
             </svg>
           </div>
         </div>
 
         <div className="md:col-span-1 lg:col-span-2 rounded-[24px] border border-white/10 bg-white/[0.02] p-8 flex flex-col justify-between relative group hover:border-white/20 transition-colors">
-          <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative z-10">
             <div className="h-10 w-10 rounded-[10px] bg-white/10 flex items-center justify-center mb-4">
               <Bot className="h-5 w-5 text-white" />
@@ -359,9 +359,9 @@ function InfrastructureGraphSection() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-10 md:gap-0 relative z-10">
             {[
               { label: "Code", icon: GitBranch, color: "bg-white/10" },
-              { label: "Build", icon: Terminal, color: "bg-[#4F7CFF]/20 text-[#4F7CFF]" },
-              { label: "Container", icon: Box, color: "bg-purple-500/20 text-purple-400" },
-              { label: "Database", icon: Database, color: "bg-green-500/20 text-green-400" },
+              { label: "Build", icon: Terminal, color: "bg-[white]/20 text-[white]" },
+              { label: "Container", icon: Box, color: "bg-white/20 text-white" },
+              { label: "Database", icon: Database, color: "bg-white/10 text-white" },
               { label: "Global Edge", icon: Globe, color: "bg-white text-black" }
             ].map((step, i) => (
               <motion.div 
@@ -373,8 +373,8 @@ function InfrastructureGraphSection() {
                 className="flex flex-col items-center gap-4"
               >
                 <div className={`h-20 w-20 rounded-[16px] flex items-center justify-center border border-white/10 backdrop-blur-md shadow-xl ${step.color} relative group`}>
-                  {i < 4 && <div className="hidden md:block absolute right-[-40%] top-1/2 -translate-y-1/2 w-4 h-0.5 bg-white/20 group-hover:bg-[#4F7CFF] transition-colors"></div>}
-                  {i < 4 && <div className="hidden md:block absolute right-[-80%] top-1/2 -translate-y-1/2 w-4 h-0.5 bg-white/20 group-hover:bg-[#4F7CFF] transition-colors"></div>}
+                  {i < 4 && <div className="hidden md:block absolute right-[-40%] top-1/2 -translate-y-1/2 w-4 h-0.5 bg-white/20 group-hover:bg-[white] transition-colors"></div>}
+                  {i < 4 && <div className="hidden md:block absolute right-[-80%] top-1/2 -translate-y-1/2 w-4 h-0.5 bg-white/20 group-hover:bg-[white] transition-colors"></div>}
                   <step.icon className="h-8 w-8" />
                 </div>
                 <span className="font-medium text-sm text-white/80">{step.label}</span>
@@ -405,19 +405,19 @@ function AIAndAnalyticsSection() {
               <AreaChart data={mockData}>
                 <defs>
                   <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4F7CFF" stopOpacity={0.5}/>
-                    <stop offset="95%" stopColor="#4F7CFF" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="white" stopOpacity={0.5}/>
+                    <stop offset="95%" stopColor="white" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <Area type="monotone" dataKey="req" stroke="#4F7CFF" strokeWidth={3} fillOpacity={1} fill="url(#colorReq)" />
+                <Area type="monotone" dataKey="req" stroke="white" strokeWidth={3} fillOpacity={1} fill="url(#colorReq)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="rounded-[24px] border border-white/10 bg-white/[0.02] p-8 md:p-12 overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/10 blur-[100px] rounded-full"></div>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 blur-[100px] rounded-full"></div>
           <h3 className="text-2xl font-bold mb-4">Meet Orb AI</h3>
           <p className="text-white/50 mb-8 max-w-sm">Your infrastructure engineer. Fixes builds, optimizes Dockerfiles, and scales databases autonomously.</p>
           
@@ -427,10 +427,10 @@ function AIAndAnalyticsSection() {
               <div className="bg-white/5 rounded-[12px] p-3 text-sm text-white/80 border border-white/10">Build failed: Cannot find module 'react'</div>
             </div>
             <div className="flex gap-3 items-start">
-              <div className="h-8 w-8 rounded-full bg-[#4F7CFF]/20 text-[#4F7CFF] flex items-center justify-center shrink-0 border border-[#4F7CFF]/20"><Bot className="h-4 w-4" /></div>
-              <div className="bg-[#4F7CFF]/10 rounded-[12px] p-3 text-sm text-white border border-[#4F7CFF]/20">
+              <div className="h-8 w-8 rounded-full bg-[white]/20 text-[white] flex items-center justify-center shrink-0 border border-[white]/20"><Bot className="h-4 w-4" /></div>
+              <div className="bg-[white]/10 rounded-[12px] p-3 text-sm text-white border border-[white]/20">
                 <p className="mb-2">I detected a missing dependency in your <span className="font-mono text-xs bg-black/50 px-1 rounded">package.json</span>.</p>
-                <Button size="sm" className="h-7 text-xs bg-[#4F7CFF] text-white hover:bg-[#4F7CFF]/80">Apply Fix & Redeploy</Button>
+                <Button size="sm" className="h-7 text-xs bg-[white] text-white hover:bg-[white]/80">Apply Fix & Redeploy</Button>
               </div>
             </div>
           </div>
@@ -458,9 +458,9 @@ function PricingSection() {
           { name: "Pro", price: "$20", desc: "For professionals and small teams.", features: ["Unlimited Projects", "1TB Bandwidth", "Email Support", "Dedicated Edge Nodes", "AI Build Assistant"], popular: true },
           { name: "Enterprise", price: "Custom", desc: "For scale-ups and large organizations.", features: ["Custom Limits", "99.99% SLA", "24/7 Phone Support", "VPC Peering", "Dedicated Account Manager"] },
         ].map((plan, i) => (
-          <div key={i} className={`rounded-[24px] border ${plan.popular ? 'border-[#4F7CFF]' : 'border-white/10'} bg-[#0A0A0A] p-8 relative flex flex-col`}>
-            {plan.popular && <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#4F7CFF] text-white text-[10px] font-bold uppercase tracking-widest py-1 px-3 rounded-full">Most Popular</div>}
-            {plan.popular && <div className="absolute inset-0 bg-gradient-to-b from-[#4F7CFF]/5 to-transparent rounded-[24px] pointer-events-none"></div>}
+          <div key={i} className={`rounded-[24px] border ${plan.popular ? 'border-[white]' : 'border-white/10'} bg-[#0A0A0A] p-8 relative flex flex-col`}>
+            {plan.popular && <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[white] text-white text-[10px] font-bold uppercase tracking-widest py-1 px-3 rounded-full">Most Popular</div>}
+            {plan.popular && <div className="absolute inset-0 bg-gradient-to-b from-[white]/5 to-transparent rounded-[24px] pointer-events-none"></div>}
             
             <h3 className="text-xl font-medium mb-2">{plan.name}</h3>
             <div className="mb-4"><span className="text-4xl font-bold">{plan.price}</span>{plan.price !== "Custom" && <span className="text-white/50">/mo</span>}</div>
@@ -469,12 +469,12 @@ function PricingSection() {
             <ul className="flex flex-col gap-4 mb-8 flex-1">
               {plan.features.map((f, j) => (
                 <li key={j} className="flex items-center gap-3 text-sm text-white/80">
-                  <CheckCircle2 className={`h-4 w-4 ${plan.popular ? 'text-[#4F7CFF]' : 'text-white/30'}`} /> {f}
+                  <CheckCircle2 className={`h-4 w-4 ${plan.popular ? 'text-[white]' : 'text-white/30'}`} /> {f}
                 </li>
               ))}
             </ul>
             
-            <Button className={`w-full h-12 rounded-[12px] font-medium ${plan.popular ? 'bg-[#4F7CFF] text-white hover:bg-[#4F7CFF]/90' : 'bg-white/5 hover:bg-white/10 text-white'}`}>
+            <Button className={`w-full h-12 rounded-[12px] font-medium ${plan.popular ? 'bg-[white] text-white hover:bg-[white]/90' : 'bg-white/5 hover:bg-white/10 text-white'}`}>
               {plan.price === "Custom" ? "Contact Sales" : "Get Started"}
             </Button>
           </div>
