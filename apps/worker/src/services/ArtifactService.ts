@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-const { ZipArchive } = require('archiver');
+import archiver from 'archiver';
 import { StorageClient } from 'storage';
 
 export class ArtifactService {
@@ -28,17 +28,14 @@ export class ArtifactService {
         }
 
         const objectName = `deployments/${deploymentId}.zip`;
-        const archive = new ZipArchive({ zlib: { level: 9 } });
+        const archive = archiver('zip', { zlib: { level: 9 } });
         
         archive.on('error', (err) => reject(err));
-        
-        // MinIO putObject accepts a readable stream (the archiver instance itself is a readable stream)
-        // We do not need to save to disk first.
         
         const uploadPromise = this.storage.uploadArtifact(this.bucketName, objectName, archive);
         
         archive.directory(sourcePath, false);
-        await archive.finalize();
+        archive.finalize();
         
         await uploadPromise;
         
