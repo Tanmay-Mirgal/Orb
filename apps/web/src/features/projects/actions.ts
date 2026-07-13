@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { projects, projectRepositories } from "database";
-import { eq } from "drizzle-orm";
+import { eq, or, ilike } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
@@ -43,7 +43,7 @@ export async function getProjectBySlug(slug: string) {
     })
     .from(projects)
     .leftJoin(projectRepositories, eq(projects.id, projectRepositories.projectId))
-    .where(eq(projects.slug, slug))
+    .where(or(eq(projects.slug, slug), ilike(projects.name, slug)))
     .limit(1);
 
   if (!projectRecord || projectRecord.length === 0) {
