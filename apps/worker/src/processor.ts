@@ -3,7 +3,8 @@ import { JobPayload, DeploymentStatus } from 'shared';
 import { GitService } from './services/GitService';
 import { DockerService } from './services/DockerService';
 import { ArtifactService } from './services/ArtifactService';
-import { deployments } from 'database';
+import { CertService } from './services/CertService';
+import { deployments, projects } from 'database';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
@@ -18,6 +19,7 @@ const db = drizzle(sql);
 const gitService = new GitService();
 const dockerService = new DockerService();
 const artifactService = new ArtifactService();
+const certService = new CertService();
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 export async function processDeploymentJob(job: Job<JobPayload>) {
@@ -95,7 +97,16 @@ export async function processDeploymentJob(job: Job<JobPayload>) {
     await artifactService.uploadArtifact(workspacePath, rootDirectory, outputDirectory, payload.deploymentId);
     await log('[artifact] Upload completed successfully.');
 
-    // 5. Cleanup and Success
+    // 5. Provision SSL Certificate
+    const projectResult = await db.select().from(projects).where(eq(projects.id, payload.projectId)).limit(1);
+    const projectName = projectResult[0]?.name;
+    if (projectName) {
+      await certService.provisionCert(projectName, log);
+    } else {
+      await log('[cert] ⚠ Could not find project name — skipping cert provisioning.');
+    }
+
+    // 6. Cleanup and Success
     await log('[worker] Cleaning up workspace...');
     if (fs.existsSync(workspacePath)) {
       fs.rmSync(workspacePath, { recursive: true, force: true });

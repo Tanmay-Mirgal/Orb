@@ -12,8 +12,8 @@ orb.tanmaymirgal.dev {
     reverse_proxy localhost:3000
 }
 
-# Deployed Projects (Dynamic subdomains)
-*.orb.tanmaymirgal.dev {
+# Deployed Projects (Dynamic subdomains - individual certs via HTTP-01)
+:443 {
     tls {
         on_demand
     }
