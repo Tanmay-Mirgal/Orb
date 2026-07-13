@@ -12,7 +12,7 @@ const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', 
 console.log('🚀 Orb Worker initializing...');
 
 const worker = new Worker('deployments', processDeploymentJob, {
-  connection,
+  connection: connection as any,
   concurrency: 2, // process 2 deployments concurrently
 });
 
