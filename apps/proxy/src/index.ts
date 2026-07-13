@@ -43,7 +43,7 @@ app.use(async (req, res, next) => {
     if (resolution.isStatic) {
       await staticService.handleRequest(req, res, resolution.deploymentId);
     } else {
-      await runnerService.handleRequest(req, res, resolution.deploymentId);
+      await runnerService.handleRequest(req, res, resolution.deploymentId, resolution.envVars);
     }
   } catch (error) {
     console.error('Error handling request:', error);

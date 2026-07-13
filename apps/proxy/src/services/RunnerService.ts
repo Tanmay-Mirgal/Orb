@@ -4,6 +4,7 @@ import getPort from 'get-port';
 import httpProxy from 'http-proxy';
 import express from 'express';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export class RunnerService {
   private staticService: StaticService;
@@ -22,7 +23,7 @@ export class RunnerService {
     });
   }
 
-  async ensureRunning(deploymentId: string): Promise<number> {
+  async ensureRunning(deploymentId: string, envVars: Record<string, string> = {}): Promise<number> {
     if (this.runningDeployments.has(deploymentId)) {
       return this.runningDeployments.get(deploymentId)!.port;
     }
@@ -36,11 +37,9 @@ export class RunnerService {
     // 3. Spawn process
     console.log(`Starting dynamic deployment ${deploymentId} on port ${port}...`);
     
-    // For Next.js standalone, the entry point is server.js at the root of the uploaded artifact (since we upload .next/standalone directly)
+    // For Next.js standalone, the entry point is server.js
     let serverJsPath = path.join(deployDir, 'server.js');
-    
-    // Fallback: If it's nested (e.g. older deployment logic)
-    if (!require('fs').existsSync(serverJsPath)) {
+    if (!fs.existsSync(serverJsPath)) {
       serverJsPath = path.join(deployDir, 'standalone', 'server.js');
     }
     
@@ -50,7 +49,8 @@ export class RunnerService {
     const child = spawn(cmd, args, {
       cwd: deployDir,
       env: {
-        ...process.env,
+        ...process.env,       // proxy's own env (DB_URL etc)
+        ...envVars,           // project-specific env vars from DB
         PORT: port.toString(),
         NODE_ENV: 'production',
       }
@@ -72,9 +72,9 @@ export class RunnerService {
     return port;
   }
 
-  async handleRequest(req: express.Request, res: express.Response, deploymentId: string) {
+  async handleRequest(req: express.Request, res: express.Response, deploymentId: string, envVars: Record<string, string> = {}) {
     try {
-      const port = await this.ensureRunning(deploymentId);
+      const port = await this.ensureRunning(deploymentId, envVars);
       this.proxy.web(req, res, { target: `http://localhost:${port}` });
     } catch (err) {
       console.error('Failed to start deployment:', err);

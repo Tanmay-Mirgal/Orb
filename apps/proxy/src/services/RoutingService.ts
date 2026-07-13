@@ -1,16 +1,22 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { eq, desc, ilike } from 'drizzle-orm';
-import { projects, domains, deployments } from 'database';
+import { projects, domains, deployments, environmentVariables } from 'database';
 
 const sql = postgres(process.env.DATABASE_URL || 'postgresql://orb:password@localhost:5432/orb');
 const db = drizzle(sql);
 
 export class RoutingService {
   /**
-   * Resolves a hostname to a project and its latest successful deployment.
+   * Resolves a hostname to a project and its latest deployment,
+   * including the project's environment variables for runtime injection.
    */
-  async resolveHost(hostname: string): Promise<{ projectId: string; deploymentId: string; isStatic: boolean } | null> {
+  async resolveHost(hostname: string): Promise<{
+    projectId: string;
+    deploymentId: string;
+    isStatic: boolean;
+    envVars: Record<string, string>;
+  } | null> {
     // 1. Determine Project ID
     let projectId: string | null = null;
     const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev';
@@ -48,7 +54,7 @@ export class RoutingService {
     
     const deployment = deploymentResult[0];
 
-    // Determine if it's static based on framework
+    // 3. Determine if it's static based on framework
     const projectInfo = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     const buildCmd = projectInfo[0]?.buildCommand || '';
     const framework = projectInfo[0]?.framework || '';
@@ -60,10 +66,21 @@ export class RoutingService {
       isStatic = false;
     }
 
+    // 4. Fetch project env vars for runtime injection
+    const envVarRows = await db.select()
+      .from(environmentVariables)
+      .where(eq(environmentVariables.projectId, projectId));
+
+    const envVars = envVarRows.reduce((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {} as Record<string, string>);
+
     return {
       projectId,
       deploymentId: deployment.id,
-      isStatic
+      isStatic,
+      envVars,
     };
   }
 }
