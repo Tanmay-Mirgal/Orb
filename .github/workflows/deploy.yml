@@ -40,4 +40,7 @@ jobs:
             
             # Update Caddy config
             sudo cp ~/Orb/Caddyfile /etc/caddy/Caddyfile
+            sudo caddy validate --config /etc/caddy/Caddyfile
             sudo systemctl restart caddy
+            sleep 3
+            sudo systemctl is-active --quiet caddy && echo "✅ Caddy is running" || (echo "❌ Caddy failed to start" && sudo journalctl -u caddy --no-pager -n 30 && exit 1)
