@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       status: 'pending'
     }).returning();
 
-    return NextResponse.json({ domain: newDomain[0] });
+    return NextResponse.json({ success: true, domain: newDomain[0] });
   } catch (error: any) {
     console.error('Add domain error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
