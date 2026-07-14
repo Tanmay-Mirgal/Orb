@@ -7,6 +7,7 @@ import {
   Box, Code
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 
@@ -28,9 +29,40 @@ const MiniSparkline = () => {
 };
 
 export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumProjectCardProps) {
+  const [imageError, setImageError] = useState(false);
   const isProd = true;
   const isGithubConnected = !!repository?.githubRepositoryName;
   const projectUrl = `https://${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`;
+  
+  // Using DuckDuckGo's favicon service as it's more reliable and fails properly when no favicon exists
+  const faviconUrl = `https://icons.duckduckgo.com/ip3/${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}.ico`;
+
+  const renderFallbackIcon = () => {
+    const fw = (project.framework || "").toLowerCase();
+    if (fw.includes("next")) {
+      return (
+        <svg viewBox="0 0 180 180" className="h-6 w-6 fill-white">
+          <path d="M90 0C40.2944 0 0 40.2944 0 90C0 139.706 40.2944 180 90 180C139.706 180 180 139.706 180 90C180 40.2944 139.706 0 90 0ZM74.8727 122.973L57.5144 98.7842V58.3308H69.4147V91.6888L84.8115 113.144L74.8727 122.973ZM128.89 122.067H115.114V58.3308H128.89V122.067ZM88.0864 125.867L99.7042 142.062V58.3308H111.604V151.782L96.2078 130.326L88.0864 125.867Z"/>
+        </svg>
+      );
+    }
+    if (fw.includes("react")) {
+      return (
+        <svg viewBox="-11.5 -10.23174 23 20.46348" className="h-6 w-6 text-[#61DAFB]">
+          <circle cx="0" cy="0" r="2.05" fill="currentColor"/>
+          <g stroke="currentColor" strokeWidth="1" fill="none">
+            <ellipse rx="11" ry="4.2"/>
+            <ellipse rx="11" ry="4.2" transform="rotate(60)"/>
+            <ellipse rx="11" ry="4.2" transform="rotate(120)"/>
+          </g>
+        </svg>
+      );
+    }
+    if (fw.includes("node")) {
+      return <Cpu className="h-6 w-6 text-[#339933]" />;
+    }
+    return <Box className="h-6 w-6 text-muted-foreground" />;
+  };
 
   return (
     <motion.div
@@ -46,8 +78,15 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
       <div className="flex justify-between items-start mb-6 relative z-10">
         <div className="flex items-center gap-4">
           <div className="relative h-12 w-12 rounded-xl bg-secondary flex items-center justify-center border border-border/50 group-hover:border-accent/30 transition-colors overflow-hidden shrink-0">
-            <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <span className="font-bold text-lg">{project.name.charAt(0).toUpperCase()}</span>
+            <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none"></div>
+            {!imageError ? (
+              <img 
+                src={faviconUrl} 
+                alt={`${project.name} icon`}
+                className="h-8 w-8 object-contain"
+                onError={() => setImageError(true)}
+              />
+            ) : renderFallbackIcon()}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -80,9 +119,6 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
             <a href={projectUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a>
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
-            <Link href={`/dashboard/projects/${project.slug || project.name.toLowerCase()}/settings`}><Settings className="h-4 w-4" /></Link>
           </Button>
         </div>
       </div>

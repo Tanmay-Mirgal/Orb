@@ -69,13 +69,6 @@ export function ProjectsContentClient({ projectsData }: { projectsData: any[] })
           <div className="h-6 w-px bg-border/50 hidden sm:block"></div>
           
           <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-            <Button variant="ghost" size="sm" className="h-9 px-3 rounded-lg text-muted-foreground hover:text-foreground">
-              <span className="flex items-center gap-2"><Filter className="h-4 w-4" /> Workspace <ChevronDown className="h-3 w-3 opacity-50" /></span>
-            </Button>
-            <Button variant="ghost" size="sm" className="h-9 px-3 rounded-lg text-muted-foreground hover:text-foreground">
-              <span className="flex items-center gap-2"><Code className="h-4 w-4" /> GitHub <ChevronDown className="h-3 w-3 opacity-50" /></span>
-            </Button>
-            <div className="h-6 w-px bg-border/50"></div>
             <div className="flex bg-secondary/50 rounded-lg p-0.5">
               <Button variant="ghost" size="icon" onClick={() => setViewMode("grid")} className={`h-8 w-8 rounded-md ${viewMode === "grid" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                 <LayoutGrid className="h-4 w-4" />
