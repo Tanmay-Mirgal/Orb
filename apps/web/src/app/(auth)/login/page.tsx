@@ -30,98 +30,60 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-[#050505] text-white selection:bg-white/20 selection:text-white">
-      
-      {/* =========================================
-          LEFT SIDE: SUBTLE INFRASTRUCTURE VISUAL
-          ========================================= */}
-      <div className="hidden lg:flex w-1/2 relative flex-col items-center justify-center overflow-hidden border-r border-white/5 bg-[#020202]">
-        
-        {/* Very subtle Animated Grid */}
-        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff02_1px,transparent_1px),linear-gradient(to_bottom,#ffffff02_1px,transparent_1px)] bg-[size:48px_48px]"></div>
-          {/* Subtle slow moving glow */}
-          <motion.div 
-            animate={{ 
-              opacity: [0.01, 0.03, 0.01],
-              scale: [1, 1.1, 1]
-            }} 
-            transition={{ repeat: Infinity, duration: 10, ease: "easeInOut" }}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[800px] rounded-full bg-white blur-[120px]"
-          />
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#09090b] text-white relative overflow-hidden">
+
+      {/* Subtle background glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: "radial-gradient(ellipse 60% 50% at 50% 0%, rgba(99,102,241,0.06) 0%, transparent 70%)",
+        }}
+      />
+
+      {/* Center card */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="relative z-10 flex flex-col items-center text-center w-full max-w-[420px] px-8"
+      >
+        {/* Logo */}
+        <div className="mb-8">
+          <Image src="/logo.png" alt="Orb" width={64} height={64} className="rounded-2xl mx-auto shadow-[0_0_40px_rgba(99,102,241,0.2)]" />
         </div>
 
-        {/* Minimal Abstract Node Network */}
-        <div className="relative z-10 w-full max-w-lg h-[400px] flex items-center justify-center opacity-20 mix-blend-screen pointer-events-none">
-          <svg viewBox="0 0 800 400" className="w-full h-full">
-            <path d="M 100 200 L 400 200 L 700 200" fill="none" stroke="url(#gradient)" strokeWidth="0.5" strokeDasharray="4 4" />
-            <path d="M 250 100 L 400 200 L 550 300" fill="none" stroke="url(#gradient)" strokeWidth="0.5" strokeDasharray="2 6" />
-            <circle cx="400" cy="200" r="4" fill="#ffffff" opacity="0.5" />
-            <circle cx="100" cy="200" r="3" fill="#ffffff" opacity="0.3" />
-            <circle cx="700" cy="200" r="3" fill="#ffffff" opacity="0.3" />
-            <circle cx="250" cy="100" r="2" fill="#ffffff" opacity="0.2" />
-            <circle cx="550" cy="300" r="2" fill="#ffffff" opacity="0.2" />
-            <defs>
-              <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-                <stop offset="50%" stopColor="#ffffff" stopOpacity="1" />
-                <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
+        {/* Heading */}
+        <h1 className="text-[32px] font-black tracking-tight text-white mb-3 leading-tight">
+          Welcome to Orb
+        </h1>
+        <p className="text-[15px] text-zinc-500 mb-10 leading-relaxed">
+          Sign in to start deploying your projects<br />on your own infrastructure.
+        </p>
 
-      </div>
-
-      {/* =========================================
-          RIGHT SIDE: ELEGANT AUTHENTICATION
-          ========================================= */}
-      <div className="w-full lg:w-1/2 relative flex flex-col items-center justify-center p-8 lg:p-24 z-10">
-        
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-          className="w-full max-w-[360px] flex flex-col items-center"
+        {/* GitHub button */}
+        <Button
+          onClick={handleGitHubLogin}
+          disabled={isLoading}
+          className="w-full h-[52px] bg-white hover:bg-zinc-100 text-black rounded-full font-semibold text-[15px] transition-colors flex items-center justify-center gap-2.5 shadow-[0_2px_20px_rgba(255,255,255,0.08)]"
         >
-          {/* Logo & Header */}
-          <div className="flex flex-col items-center text-center mb-10 w-full">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-6 overflow-hidden bg-[#0A0A0A]">
-              <Image src="/logo.png" alt="Orb Logo" width={40} height={40} className="object-cover" />
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight mb-2">Welcome Back</h1>
-            <p className="text-muted-foreground text-sm">Deploy with confidence. Scale with ease.</p>
-          </div>
+          {isLoading ? (
+            <div className="h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
+          ) : (
+            <>
+              <GithubIcon className="h-5 w-5" />
+              Continue with GitHub
+            </>
+          )}
+        </Button>
 
-          {/* Minimal Auth Container */}
-          <div className="w-full flex flex-col gap-4">
-            
-            {/* Primary CTA: Official GitHub Login */}
-            <Button 
-              onClick={handleGitHubLogin}
-              disabled={isLoading}
-              className="w-full h-11 bg-white hover:bg-gray-100 text-black rounded-md font-medium text-sm transition-colors flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <div className="h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
-              ) : (
-                <>
-                  <GithubIcon className="h-4 w-4" />
-                  Continue with GitHub
-                </>
-              )}
-            </Button>
-
-          </div>
-
-        </motion.div>
-
-        {/* Footer Links */}
-        <div className="absolute bottom-8 flex items-center gap-4 text-[11px] text-muted-foreground font-medium z-10">
-          <Link href="#" className="hover:text-white transition-colors">Privacy Policy</Link>
-          <span className="w-0.5 h-0.5 rounded-full bg-white/20"></span>
-          <Link href="#" className="hover:text-white transition-colors">Terms of Service</Link>
-        </div>
-
-      </div>
+        <p className="mt-8 text-[12px] text-zinc-700 leading-relaxed">
+          By continuing, you agree to our{" "}
+          <Link href="#" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300 transition-colors">Terms</Link>
+          {" "}and{" "}
+          <Link href="#" className="text-zinc-500 underline underline-offset-2 hover:text-zinc-300 transition-colors">Privacy Policy</Link>.
+        </p>
+      </motion.div>
     </div>
   );
 }
