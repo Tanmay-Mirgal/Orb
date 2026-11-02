@@ -1,0 +1,13 @@
+# Orb
+
+> Orb is a deployment platform: push to GitHub and go live with automatic HTTPS. It runs static sites, web services, background workers and cron jobs, with custom domains, instant rollbacks, encrypted environment variables, logs and analytics, teams with invitations and roles, e-mail and in-app alerts, and plans paid with Razorpay (UPI, cards, netbanking). A free Hobby plan is available.
+
+## Key pages
+- [Home, features, pricing and FAQ](https://orb.tanmaymirgal.dev/): what Orb does and what each plan includes
+- [55-second captioned product tour](https://orb.tanmaymirgal.dev/media/orb-tour.mp4): video walkthrough of every feature
+- [Log in with GitHub](https://orb.tanmaymirgal.dev/login): start deploying for free
+
+## Facts
+- Built by Tanmay Mirgal (https://tanmaymirgal.dev)
+- Plans: Hobby free, Pro ₹999/month, Team ₹4,999/month (INR, prepaid, no auto-renewal)
+- Free web services sleep after 20 idle minutes and wake on the next request; static sites are always on
