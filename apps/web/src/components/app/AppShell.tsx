@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, Box, Check, ChevronsUpDown, CreditCard, Globe, LayoutDashboard, LogOut, Menu, Plus, Search, Settings, Users, X,
+  AlertTriangle, Bell, Box, Check, CheckCheck, ChevronsUpDown, CreditCard, Gift, Globe, GitBranch, LayoutDashboard, LogOut, Mail, Menu, Plus, Rocket, Search, Settings, Users, Wallet, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut } from "@/lib/auth-client";
@@ -30,7 +30,8 @@ export interface ShellProps {
   teams: ShellTeam[];
   activeTeamId: string;
   projects: PaletteProject[];
-  plan: { name: string; projects: number; maxProjects: number };
+  plan: { id: string; name: string; projects: number; maxProjects: number; expiresAt: string | null; source: string };
+  unreadNotifications: number;
   children: React.ReactNode;
 }
 
@@ -107,6 +108,29 @@ function TeamSwitcher({ teams, activeTeamId }: { teams: ShellTeam[]; activeTeamI
   );
 }
 
+function PlanCard({ plan, onNavigate }: { plan: ShellProps["plan"]; onNavigate?: () => void }) {
+  const free = plan.id === "free";
+  const expires = plan.expiresAt ? new Date(plan.expiresAt) : null;
+  const days = expires ? Math.ceil((expires.getTime() - Date.now()) / 86_400_000) : null;
+  const soon = !free && days !== null && days <= 7;
+  return (
+    <Link href="/dashboard/billing" onClick={onNavigate} className="block rounded-xl border bg-card p-3 shadow-sm transition-colors hover:bg-secondary/40">
+      <div className="flex items-center justify-between text-xs">
+        <span className="flex items-center gap-1.5 font-medium">
+          {plan.source === "grant" ? <Gift className="size-3 text-accent" /> : null}
+          {plan.name} plan
+        </span>
+        <span className={cn(soon ? "text-warning" : "text-accent")}>{free ? "Upgrade" : soon ? "Renew" : "Manage"}</span>
+      </div>
+      <Meter value={plan.projects} max={plan.maxProjects} className="mt-2.5" />
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        {plan.projects} of {plan.maxProjects} projects used
+        {!free && expires ? ` · ${soon ? `ends in ${days}d` : plan.source === "grant" ? `free until ${expires.getFullYear()}` : `until ${expires.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}` : ""}
+      </p>
+    </Link>
+  );
+}
+
 function SidebarContent({ props, onNavigate }: { props: ShellProps; onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -140,16 +164,7 @@ function SidebarContent({ props, onNavigate }: { props: ShellProps; onNavigate?:
       </nav>
 
       <div className="space-y-3">
-        <Link href="/dashboard/billing" onClick={onNavigate} className="block rounded-xl border bg-card p-3 shadow-sm transition-colors hover:bg-secondary/40">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium">{plan.name} plan</span>
-            <span className="text-accent">Upgrade</span>
-          </div>
-          <Meter value={plan.projects} max={plan.maxProjects} className="mt-2.5" />
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            {plan.projects} of {plan.maxProjects} projects used
-          </p>
-        </Link>
+        <PlanCard plan={plan} onNavigate={onNavigate} />
 
         <Dropdown
           className="w-full"
@@ -198,36 +213,171 @@ interface ActivityItem {
   projectSlug: string | null;
 }
 
-function ActivityMenu() {
+interface InboxItem {
+  id: string;
+  category: string;
+  type: string;
+  title: string;
+  body: string | null;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+const CATEGORY_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  deployments: Rocket,
+  domains: Globe,
+  team: Users,
+  billing: Wallet,
+  security: AlertTriangle,
+  product: Mail,
+};
+
+const BAD_TYPES = new Set(["deployment.failed", "service.down", "domain.error", "billing.failed"]);
+
+function NotificationsMenu({ initialUnread }: { initialUnread: number }) {
+  const router = useRouter();
+  const [tab, setTab] = React.useState<"inbox" | "deployments">("inbox");
+  const [unread, setUnread] = React.useState(initialUnread);
+  const [inbox, setInbox] = React.useState<InboxItem[] | null>(null);
   const [items, setItems] = React.useState<ActivityItem[] | null>(null);
-  const load = () => api<{ activity: ActivityItem[] }>("/api/v1/activity").then((d) => setItems(d.activity)).catch(() => setItems([]));
+
+  const loadInbox = React.useCallback(
+    () =>
+      api<{ notifications: InboxItem[]; unread: number }>("/api/v1/notifications?limit=20")
+        .then((d) => {
+          setInbox(d.notifications);
+          setUnread(d.unread);
+        })
+        .catch(() => setInbox([])),
+    [],
+  );
+
+  // Keep the badge fresh while the tab is visible (one tiny query per minute per open dashboard).
+  React.useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") {
+        void api<{ unread: number }>("/api/v1/notifications?limit=1").then((d) => setUnread(d.unread)).catch(() => undefined);
+      }
+    };
+    const id = window.setInterval(tick, 60_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
+
+  const markRead = async (body: { ids?: string[]; all?: boolean }) => {
+    await api("/api/v1/notifications/read", { method: "POST", body: JSON.stringify(body) }).catch(() => undefined);
+    void loadInbox();
+  };
+
   return (
     <Dropdown
       align="end"
-      panelClassName="w-80"
+      panelClassName="w-[22rem] max-w-[calc(100vw-1.5rem)]"
       trigger={({ toggle }) => (
-        <Button variant="ghost" size="icon" aria-label="Recent activity" onClick={() => { toggle(); void load(); }}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+          onClick={() => {
+            toggle();
+            void loadInbox();
+            void api<{ activity: ActivityItem[] }>("/api/v1/activity").then((d) => setItems(d.activity)).catch(() => setItems([]));
+          }}
+        >
           <Bell />
+          {unread > 0 && (
+            <span className="absolute right-1.5 top-1.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-accent-foreground ring-2 ring-background">
+              {unread > 9 ? "9+" : unread}
+            </span>
+          )}
         </Button>
       )}
     >
       {(close) => (
         <div>
-          <DropdownLabel>Recent deployments</DropdownLabel>
-          <div className="scroll-thin max-h-80 overflow-y-auto">
-            {items === null && <p className="px-3 py-6 text-center text-xs text-muted-foreground">Loading…</p>}
-            {items?.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">Nothing deployed yet.</p>}
-            {items?.map((a) => (
-              <DropdownItem key={a.id} href={`/dashboard/projects/${a.projectSlug ?? ""}`} onClick={close}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-medium">{a.projectName}</span>
-                    <StatusBadge status={a.status} />
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{a.commitMessage ?? "Manual deployment"} · {timeAgo(a.createdAt)}</p>
-                </div>
-              </DropdownItem>
+          <div className="flex items-center gap-1 px-1.5 pb-1 pt-1">
+            {(["inbox", "deployments"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn("rounded-md px-2.5 py-1.5 text-xs font-medium capitalize transition-colors", tab === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}
+              >
+                {t === "inbox" ? `Inbox${unread ? ` · ${unread}` : ""}` : "Deployments"}
+              </button>
             ))}
+            {tab === "inbox" && unread > 0 && (
+              <button onClick={() => void markRead({ all: true })} className="ml-auto flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                <CheckCheck className="size-3.5" /> Mark all read
+              </button>
+            )}
+          </div>
+          <div className="scroll-thin max-h-96 overflow-y-auto border-t">
+            {tab === "inbox" ? (
+              <>
+                {inbox === null && <p className="px-3 py-8 text-center text-xs text-muted-foreground">Loading…</p>}
+                {inbox?.length === 0 && (
+                  <div className="px-3 py-10 text-center">
+                    <Bell className="mx-auto size-5 text-muted-foreground/60" />
+                    <p className="mt-2 text-[13px] font-medium">You are all caught up</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Deployments, invitations and billing updates show up here.</p>
+                  </div>
+                )}
+                {inbox?.map((n) => {
+                  const Icon = CATEGORY_ICON[n.category] ?? Bell;
+                  const bad = BAD_TYPES.has(n.type);
+                  return (
+                    <DropdownItem
+                      key={n.id}
+                      href={n.href ?? undefined}
+                      onClick={() => {
+                        if (!n.readAt) void markRead({ ids: [n.id] });
+                        close();
+                        if (!n.href) router.refresh();
+                      }}
+                    >
+                      <span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg", bad ? "bg-destructive/10" : "bg-secondary")}>
+                        <Icon className={cn("!size-3.5", bad && "!text-destructive")} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className={cn("text-[13px] leading-snug", n.readAt ? "font-normal" : "font-semibold")}>{n.title}</span>
+                          {!n.readAt && <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-accent" aria-label="Unread" />}
+                        </div>
+                        {n.body && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>}
+                        <p className="mt-1 text-[11px] text-muted-foreground/80">{timeAgo(n.createdAt)}</p>
+                      </div>
+                    </DropdownItem>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                {items === null && <p className="px-3 py-8 text-center text-xs text-muted-foreground">Loading…</p>}
+                {items?.length === 0 && <p className="px-3 py-8 text-center text-xs text-muted-foreground">Nothing deployed yet.</p>}
+                {items?.map((a) => (
+                  <DropdownItem key={a.id} href={`/dashboard/projects/${a.projectSlug ?? ""}`} onClick={close}>
+                    <GitBranch className="mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{a.projectName}</span>
+                        <StatusBadge status={a.status} />
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{a.commitMessage ?? "Manual deployment"} · {timeAgo(a.createdAt)}</p>
+                    </div>
+                  </DropdownItem>
+                ))}
+              </>
+            )}
+          </div>
+          <div className="border-t px-0 pt-1">
+            <DropdownItem href="/dashboard/settings" onClick={close}>
+              <Settings /> Notification settings
+            </DropdownItem>
           </div>
         </div>
       )}
@@ -318,7 +468,7 @@ export function AppShell(props: ShellProps) {
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setPalette(true)} aria-label="Search">
             <Search />
           </Button>
-          <ActivityMenu />
+          <NotificationsMenu initialUnread={props.unreadNotifications} />
           <ThemeToggle />
           <Button asChild size="sm" className="hidden sm:inline-flex">
             <Link href="/dashboard/new">

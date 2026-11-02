@@ -10,6 +10,8 @@ export interface ReleaseJob {
   deploymentId: string;
   /** Point the project's production alias at this deployment once it is healthy. */
   promote: boolean;
+  /** The project was put to sleep for being idle: starting its instances again clears that state. */
+  wake?: boolean;
 }
 
 export interface DrainJob {

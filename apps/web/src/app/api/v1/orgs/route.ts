@@ -1,8 +1,8 @@
 import { createOrgSchema } from 'shared';
-import { parseBody, route } from '@/server/api';
+import { parseBody, planLimit, route } from '@/server/api';
 import { audit } from '@/server/audit';
 import { authenticate } from '@/server/context';
-import { createOrganization, listMemberships } from '@/server/orgs';
+import { createOrganization, listMemberships, ownedTeamLimit } from '@/server/orgs';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +15,8 @@ export const GET = route(async ({ req }) => {
 export const POST = route(async ({ req }) => {
   const auth = await authenticate(req);
   const { name } = await parseBody(req, createOrgSchema);
+  const { owned, limit } = await ownedTeamLimit(auth.userId);
+  if (owned >= limit) throw planLimit(`You can own up to ${limit} teams. Upgrade a team to a paid plan to raise this limit.`);
   const org = await createOrganization({ name, ownerId: auth.userId });
   await audit(auth, { orgId: org.id, action: 'org.create', targetType: 'org', targetId: org.id });
   return Response.json({ organization: { ...org, role: 'owner' } }, { status: 201 });

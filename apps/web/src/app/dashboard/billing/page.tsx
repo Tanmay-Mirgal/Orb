@@ -6,5 +6,5 @@ export const metadata = { title: "Usage & billing" };
 
 export default async function BillingPage() {
   const data = await getUsage();
-  return <BillingClient data={data} />;
+  return <BillingClient data={JSON.parse(JSON.stringify(data))} />;
 }

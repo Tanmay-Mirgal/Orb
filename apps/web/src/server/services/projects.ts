@@ -8,6 +8,7 @@ import {
   eq,
   inArray,
   instances,
+  ne,
   projectRepositories,
   projects,
   type Deployment,
@@ -68,6 +69,18 @@ export async function createProject(options: {
   assertWithinPlan(org, input);
   const type = input.type as ProjectType;
   if (type === 'cron' && !input.cronSchedule) throw badRequest('Cron jobs need a schedule');
+  if (type !== 'static') {
+    // Containers are what costs money (RAM, CPU, disk); static sites only use object storage.
+    const [containers] = await db
+      .select({ n: count() })
+      .from(projects)
+      .where(and(eq(projects.orgId, org.id), ne(projects.type, 'static')));
+    if ((containers?.n ?? 0) >= plan.maxContainerProjects) {
+      throw planLimit(
+        `Your ${plan.name} plan includes ${plan.maxContainerProjects} web service / worker / cron project${plan.maxContainerProjects === 1 ? '' : 's'}. Static sites are not counted. Upgrade for more.`,
+      );
+    }
+  }
 
   // Trust GitHub, not the browser: confirm the user can read the repository and take canonical identifiers from it.
   const token = await getUserGithubToken(userId);

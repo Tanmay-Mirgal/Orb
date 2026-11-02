@@ -130,6 +130,10 @@ export const REDIS_KEYS = {
   metricsBucket: (projectId: string, bucketIso: string) => `orb:metrics:${projectId}:${bucketIso}`,
   metricsIndex: 'orb:metrics:index',
   rateLimit: (key: string) => `orb:rl:${key}`,
+  /** Epoch ms of the last request the edge forwarded to a project (drives idle sleep). */
+  lastSeen: (projectId: string) => `orb:lastseen:${projectId}`,
+  /** Held while a sleeping project is being woken so a burst of requests starts it only once. */
+  wakeLock: (projectId: string) => `orb:wake:${projectId}`,
 } as const;
 
 export const BUILD_LOG_TTL_SECONDS = 60 * 60 * 24 * 7;

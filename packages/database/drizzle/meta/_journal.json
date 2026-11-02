@@ -15,6 +15,20 @@
       "when": 1793578066458,
       "tag": "0001_upgrade_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793639383836,
+      "tag": "0002_teams_billing_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793639402528,
+      "tag": "0003_owner_plan_grant",
+      "breakpoints": true
     }
   ]
 }

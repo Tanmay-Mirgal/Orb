@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, memberships, organizations, type Organization } from 'database';
-import { slugify, type Role } from 'shared';
+import { emailTemplates, platformConfig } from 'core';
+import { and, applyPlanGrants, eq, memberships, notify, organizations, type Organization } from 'database';
+import { getOrgPlan, NotificationType, slugify, type Role } from 'shared';
 import { db } from '@/lib/db';
 
 /** Organisation slug: unique, DNS-friendly, never reveals the user's email. */
@@ -20,7 +21,7 @@ export async function createOrganization(options: {
   isPersonal?: boolean;
 }): Promise<Organization> {
   const slug = await uniqueOrgSlug(options.name);
-  return db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     const [org] = await tx
       .insert(organizations)
       .values({ name: options.name, slug, createdBy: options.ownerId, isPersonal: options.isPersonal ?? false })
@@ -28,6 +29,52 @@ export async function createOrganization(options: {
     await tx.insert(memberships).values({ orgId: org!.id, userId: options.ownerId, role: 'owner' });
     return org!;
   });
+  // A complimentary plan registered for the owner's e-mail covers the new team straight away.
+  const covered = (await syncPlanGrants(options.ownerId)).some((g) => g.orgId === created.id);
+  if (!covered) return created;
+  const [fresh] = await db.select().from(organizations).where(eq(organizations.id, created.id)).limit(1);
+  return fresh ?? created;
+}
+
+/** Applies the user's complimentary plan (if any) to the teams they own and tells them about newly covered teams. */
+export async function syncPlanGrants(userId: string) {
+  try {
+    const applied = await applyPlanGrants(db, userId);
+    for (const grant of applied) {
+      const plan = getOrgPlan(grant.plan);
+      await notify(db, {
+        userIds: [userId],
+        orgId: grant.orgId,
+        category: 'billing',
+        type: NotificationType.BILLING_GRANTED,
+        title: `${plan.name} plan activated for ${grant.orgName}`,
+        body: `Complimentary until ${grant.expiresAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.`,
+        href: '/dashboard/billing',
+        email: () => emailTemplates.planGranted({ orgName: grant.orgName, planName: plan.name, expiresAt: grant.expiresAt, billingUrl: `${platformConfig().dashboardUrl}/dashboard/billing` }),
+      });
+    }
+    return applied;
+  } catch (err) {
+    console.error(JSON.stringify({ level: 'error', msg: 'plan grant sync failed', userId, err: String(err) }));
+    return [];
+  }
+}
+
+/**
+ * Every team starts with 5 free projects, so the number of teams one person may own is capped unless they pay:
+ * otherwise a single account could multiply the free tier at our cost.
+ */
+export const MAX_OWNED_TEAMS_FREE = 3;
+export const MAX_OWNED_TEAMS_PAID = 25;
+
+export async function ownedTeamLimit(userId: string): Promise<{ owned: number; limit: number }> {
+  const rows = await db
+    .select({ plan: organizations.plan })
+    .from(memberships)
+    .innerJoin(organizations, eq(organizations.id, memberships.orgId))
+    .where(and(eq(memberships.userId, userId), eq(memberships.role, 'owner')));
+  const paying = rows.some((r) => r.plan !== 'free');
+  return { owned: rows.length, limit: paying ? MAX_OWNED_TEAMS_PAID : MAX_OWNED_TEAMS_FREE };
 }
 
 /** Called right after a user signs up (and lazily on first request for pre-existing users). */

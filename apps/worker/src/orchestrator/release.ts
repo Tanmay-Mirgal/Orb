@@ -24,6 +24,7 @@ import {
 import { storageKeys } from 'storage';
 import { BuildLog } from '../build/buildlog';
 import type { WorkerContext } from '../context';
+import { notifyDeployment } from '../notifications';
 import { ACTIVE_INSTANCE_STATUSES, pickNodes } from './nodes';
 
 async function stopInstances(ctx: WorkerContext, rows: Array<{ id: string; nodeId: string; containerId: string | null }>) {
@@ -73,6 +74,7 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
     if (config.type === 'cron') {
       await markReady(ctx, deployment, project, job.data.promote);
       log.line(`[orb] ✓ Cron job ready — schedule "${config.cronSchedule}" (executed by the scheduler worker)`);
+      if (deployment.status === DeploymentStatus.DEPLOYING) await notifyDeployment(ctx, deployment.id, 'ready');
       return;
     }
     if (!deployment.imageRef) throw new Error('Deployment has no image to run');
@@ -138,7 +140,13 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
     }
 
     await markReady(ctx, deployment, project, job.data.promote);
-    log.line(job.data.promote ? '[orb] ✓ Live: traffic switched to the new deployment' : '[orb] ✓ Ready (preview)');
+    if (job.data.wake) {
+      // The service was asleep: it is serving again, so let the edge route to the fresh instances right away.
+      await db.update(projects).set({ sleepingAt: null, updatedAt: new Date() }).where(eq(projects.id, project.id));
+      await publishRouteInvalidation(ctx.redis, { projectId: project.id });
+    }
+    log.line(job.data.wake ? '[orb] ✓ Woke up from sleep' : job.data.promote ? '[orb] ✓ Live: traffic switched to the new deployment' : '[orb] ✓ Ready (preview)');
+    if (deployment.status === DeploymentStatus.DEPLOYING) await notifyDeployment(ctx, deployment.id, 'ready');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.line(`[error] ${message}`);
@@ -149,6 +157,7 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
         .update(deployments)
         .set({ status: DeploymentStatus.FAILED, errorMessage: message.slice(0, 2000), updatedAt: new Date() })
         .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.DEPLOYING)));
+      await notifyDeployment(ctx, deployment.id, 'failed');
     }
     throw err;
   } finally {
@@ -170,7 +179,7 @@ async function markReady(ctx: WorkerContext, deployment: Deployment, project: Pr
   if (promote) {
     const [current] = await db.select({ id: projects.currentDeploymentId }).from(projects).where(eq(projects.id, project.id));
     const previous = current?.id ?? null;
-    await db.update(projects).set({ currentDeploymentId: deployment.id, updatedAt: now }).where(eq(projects.id, project.id));
+    await db.update(projects).set({ currentDeploymentId: deployment.id, sleepingAt: null, updatedAt: now }).where(eq(projects.id, project.id));
     await publishRouteInvalidation(ctx.redis, { projectId: project.id });
     if (previous && previous !== deployment.id) {
       const payload: DrainJob = { deploymentId: previous };

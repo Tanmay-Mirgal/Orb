@@ -1,5 +1,6 @@
-import { and, count, eq, memberships } from 'database';
-import { canAssignRole, roleRank, updateMemberSchema, type Role } from 'shared';
+import { emailTemplates, platformConfig } from 'core';
+import { and, count, eq, memberships, notify } from 'database';
+import { canAssignRole, NotificationType, roleRank, updateMemberSchema, type Role } from 'shared';
 import { db } from '@/lib/db';
 import { conflict, forbidden, notFound, parseBody, route } from '@/server/api';
 import { audit } from '@/server/audit';
@@ -31,6 +32,18 @@ export const PATCH = route<{ orgId: string; userId: string }>(async ({ req, para
   if (role !== 'owner') await assertNotLastOwner(org.id, target);
   await db.update(memberships).set({ role }).where(and(eq(memberships.orgId, org.id), eq(memberships.userId, params.userId)));
   await audit(auth, { orgId: org.id, action: 'member.role', targetType: 'user', targetId: params.userId, metadata: { role } });
+  if (params.userId !== auth.userId) {
+    await notify(db, {
+      userIds: [params.userId],
+      orgId: org.id,
+      category: 'team',
+      type: NotificationType.TEAM_ROLE_CHANGED,
+      title: `Your role in ${org.name} is now ${role}`,
+      body: `Changed by ${auth.userName}.`,
+      href: '/dashboard/team',
+      email: () => emailTemplates.roleChanged({ orgName: org.name, role, byName: auth.userName, dashboardUrl: `${platformConfig().dashboardUrl}/dashboard` }),
+    });
+  }
   return { ok: true };
 });
 
@@ -46,5 +59,15 @@ export const DELETE = route<{ orgId: string; userId: string }>(async ({ req, par
   await assertNotLastOwner(org.id, target);
   await db.delete(memberships).where(and(eq(memberships.orgId, org.id), eq(memberships.userId, params.userId)));
   await audit(auth, { orgId: org.id, action: leavingSelf ? 'member.leave' : 'member.remove', targetType: 'user', targetId: params.userId });
+  if (!leavingSelf) {
+    await notify(db, {
+      userIds: [params.userId],
+      category: 'team',
+      type: NotificationType.TEAM_REMOVED,
+      title: `You were removed from ${org.name}`,
+      body: `Removed by ${auth.userName}.`,
+      email: () => emailTemplates.removedFromTeam({ orgName: org.name, byName: auth.userName }),
+    });
+  }
   return { ok: true };
 });

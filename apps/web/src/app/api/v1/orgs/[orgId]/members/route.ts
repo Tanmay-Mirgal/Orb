@@ -1,5 +1,6 @@
-import { and, count, eq, memberships, users } from 'database';
-import { addMemberSchema, canAssignRole, getOrgPlan, type Role } from 'shared';
+import { emailTemplates, platformConfig } from 'core';
+import { and, count, eq, memberships, notify, users } from 'database';
+import { addMemberSchema, canAssignRole, getOrgPlan, NotificationType, type Role } from 'shared';
 import { db } from '@/lib/db';
 import { badRequest, conflict, forbidden, notFound, parseBody, planLimit, route } from '@/server/api';
 import { audit } from '@/server/audit';
@@ -18,7 +19,7 @@ export const GET = route<{ orgId: string }>(async ({ req, params }) => {
   return { members: rows };
 });
 
-/** Adds an existing Orb user (by email) to the team. Invitation e-mails are a roadmap item. */
+/** Adds an existing Orb user straight to the team (API use). The dashboard sends invitations instead, which the invitee accepts. */
 export const POST = route<{ orgId: string }>(async ({ req, params }) => {
   const auth = await authenticate(req);
   const { org, role: actorRole } = await orgContext(auth, req, params.orgId);
@@ -39,5 +40,15 @@ export const POST = route<{ orgId: string }>(async ({ req, params }) => {
 
   await db.insert(memberships).values({ orgId: org.id, userId: user.id, role });
   await audit(auth, { orgId: org.id, action: 'member.add', targetType: 'user', targetId: user.id, metadata: { role } });
+  await notify(db, {
+    userIds: [user.id],
+    orgId: org.id,
+    category: 'team',
+    type: NotificationType.TEAM_ROLE_CHANGED,
+    title: `${auth.userName} added you to ${org.name}`,
+    body: `Role: ${role}`,
+    href: '/dashboard/team',
+    email: () => emailTemplates.roleChanged({ orgName: org.name, role, byName: auth.userName, dashboardUrl: `${platformConfig().dashboardUrl}/dashboard` }),
+  });
   return Response.json({ ok: true }, { status: 201 });
 });

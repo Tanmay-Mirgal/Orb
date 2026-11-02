@@ -1,6 +1,6 @@
-import { generateApiToken } from 'core';
-import { apiTokens, count, desc, eq, and, isNull } from 'database';
-import { createTokenSchema } from 'shared';
+import { emailTemplates, generateApiToken, platformConfig } from 'core';
+import { apiTokens, count, desc, eq, and, isNull, notify } from 'database';
+import { createTokenSchema, NotificationType } from 'shared';
 import { db } from '@/lib/db';
 import { badRequest, parseBody, route } from '@/server/api';
 import { authenticate } from '@/server/context';
@@ -37,5 +37,14 @@ export const POST = route(async ({ req }) => {
   const { token, hash, prefix } = generateApiToken();
   const expiresAt = input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000) : null;
   const [row] = await db.insert(apiTokens).values({ userId: auth.userId, name: input.name, tokenHash: hash, prefix, expiresAt }).returning();
+  await notify(db, {
+    userIds: [auth.userId],
+    category: 'security',
+    type: NotificationType.SECURITY_TOKEN,
+    title: `API token "${input.name}" created`,
+    body: 'If this was not you, revoke it in Settings → API tokens.',
+    href: '/dashboard/settings',
+    email: () => emailTemplates.tokenCreated({ tokenName: input.name, settingsUrl: `${platformConfig().dashboardUrl}/dashboard/settings` }),
+  });
   return Response.json({ token, id: row!.id, name: row!.name, prefix, expiresAt }, { status: 201 });
 });

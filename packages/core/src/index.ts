@@ -9,3 +9,5 @@ export * from './logs';
 export * from './ops';
 export * from './dns';
 export * from './github';
+export * from './mailer';
+export * from './email-templates';

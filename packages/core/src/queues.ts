@@ -35,8 +35,8 @@ export function enqueueBuild(queue: BuildQueue, deploymentId: string) {
   return queue.add('build', { deploymentId }, { jobId: `build-${deploymentId}` });
 }
 
-export function enqueueRelease(queue: ReleaseQueue, deploymentId: string, promote: boolean) {
-  return queue.add('release', { deploymentId, promote }, { jobId: `release-${deploymentId}-${Date.now()}` });
+export function enqueueRelease(queue: ReleaseQueue, deploymentId: string, promote: boolean, wake = false) {
+  return queue.add('release', { deploymentId, promote, wake }, { jobId: `release-${deploymentId}-${Date.now()}` });
 }
 
 /**

@@ -1,5 +1,6 @@
 export * from './constants';
 export * from './plans';
+export * from './notifications';
 export * from './slug';
 export * from './env';
 export * from './detect';

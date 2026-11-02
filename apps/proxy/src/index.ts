@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 import * as http from 'node:http';
 import type { Duplex } from 'node:stream';
 import httpProxy from 'http-proxy';
-import { createLogger, createMetrics, createRedis, loadEnv, startOpsServer, subscribeRouteInvalidation } from 'core';
+import { createLogger, createMetrics, createRedis, createReleaseQueue, enqueueRelease, loadEnv, startOpsServer, subscribeRouteInvalidation } from 'core';
 import { createDb, sql } from 'database';
 import { createStorageFromEnv } from 'storage';
 import { proxyConfig } from './config';
 import { EdgeMetrics } from './edge-metrics';
-import { errorPage } from './pages';
+import { REDIS_KEYS } from 'shared';
+import { errorPage, wakingPage } from './pages';
 import { RouteResolver, type Endpoint, type Route } from './routes';
 import { StaticHandler } from './static';
 
@@ -27,6 +28,27 @@ async function main() {
   const statics = new StaticHandler(storage, config);
   const edge = new EdgeMetrics(redis);
   edge.start();
+  const releaseQueue = createReleaseQueue(redis);
+
+  // Idle detection for free-plan services: remember when each project last received a request. Written at most
+  // every 30 s per project, so the cost is O(active projects), not O(requests).
+  const touched = new Map<string, number>();
+  const touch = (projectId: string) => {
+    const now = Date.now();
+    if (now - (touched.get(projectId) ?? 0) < 30_000) return;
+    touched.set(projectId, now);
+    void redis.set(REDIS_KEYS.lastSeen(projectId), String(now), 'EX', 7 * 86_400).catch(() => undefined);
+  };
+  setInterval(() => {
+    const cutoff = Date.now() - 120_000;
+    for (const [id, at] of touched) if (at < cutoff) touched.delete(id);
+  }, 60_000).unref();
+
+  /** One request starts the service; the lock keeps a burst of visitors from queueing a release each. */
+  const wake = async (projectId: string, deploymentId: string) => {
+    const first = await redis.set(REDIS_KEYS.wakeLock(projectId), '1', 'EX', 90, 'NX');
+    if (first) await enqueueRelease(releaseQueue, deploymentId, false, true);
+  };
 
   const metrics = createMetrics('proxy');
   const requestsTotal = new metrics.client.Counter({ name: 'orb_proxy_requests_total', help: 'Edge requests', labelNames: ['kind', 'status'], registers: [metrics.registry] });
@@ -118,6 +140,11 @@ async function main() {
       if (route.kind === 'redirect') {
         return void res.writeHead(route.status, { Location: route.location + (req.url ?? '/') }).end();
       }
+      if (route.kind === 'sleeping') {
+        await wake(route.projectId, route.deploymentId);
+        touch(route.projectId);
+        return void res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': '3' }).end(wakingPage());
+      }
       if (route.kind === 'none') {
         const [status, title, message] =
           route.reason === 'not_found'
@@ -128,6 +155,7 @@ async function main() {
         return html(res, status as number, title as string, message as string);
       }
       projectId = route.projectId;
+      if (route.kind === 'service') touch(route.projectId);
       sanitize(req, requestId);
       if (route.kind === 'static') return await statics.handle(req, res, route.deploymentId);
       forward(req, res, route, new Set());
@@ -142,6 +170,7 @@ async function main() {
     try {
       const route = await resolver.resolve(req.headers.host);
       if (route.kind !== 'service') return void socket.destroy();
+      touch(route.projectId);
       const endpoint = pick(route, new Set());
       if (!endpoint) return void socket.destroy();
       sanitize(req, randomUUID());

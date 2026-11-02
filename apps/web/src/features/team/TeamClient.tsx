@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import Link from "next/link";
+import { Mail, Plus, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { getOrgPlan } from "shared";
 import { api, errorMessage } from "@/lib/api-client";
 import { timeAgo } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -25,17 +27,22 @@ export function TeamClient({ org, role, currentUserId }: { org: { id: string; na
   const router = useRouter();
   const toast = useToast();
   const [members, setMembers] = useState<any[] | null>(null);
+  const [invites, setInvites] = useState<any[]>([]);
+  const [inviting, setInviting] = useState(false);
   const [logs, setLogs] = useState<any[] | null>(null);
   const [email, setEmail] = useState("");
   const [newRole, setNewRole] = useState("member");
   const [teamName, setTeamName] = useState("");
   const [removing, setRemoving] = useState<any | null>(null);
   const isAdmin = role === "admin" || role === "owner";
+  const plan = getOrgPlan(org.plan);
+  const canInvite = isAdmin && !org.isPersonal && plan.maxMembers > 1;
 
   const load = useCallback(async () => {
     setMembers((await api(`/api/v1/orgs/${org.id}/members`)).members);
+    if (isAdmin && !org.isPersonal) setInvites((await api(`/api/v1/orgs/${org.id}/invitations`).catch(() => ({ invitations: [] }))).invitations);
     if (isAdmin) setLogs((await api(`/api/v1/orgs/${org.id}/audit-logs?limit=25`)).logs);
-  }, [org.id, isAdmin]);
+  }, [org.id, org.isPersonal, isAdmin]);
   useEffect(() => {
     load().catch(() => setMembers([]));
   }, [load]);
@@ -68,12 +75,36 @@ export function TeamClient({ org, role, currentUserId }: { org: { id: string; na
           <CardDescription>{org.isPersonal ? "This is your personal team. Create a shared team below to collaborate." : "People who can access this team's projects."}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isAdmin && !org.isPersonal && (
+          {isAdmin && !org.isPersonal && !canInvite && (
+            <div className="flex items-start gap-3 rounded-xl border border-accent/25 bg-accent-soft p-4">
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
+              <div className="min-w-0 flex-1 text-[13px]">
+                <p className="font-medium">The {plan.name} plan is for one person</p>
+                <p className="mt-0.5 text-muted-foreground">Upgrade this team to invite teammates and give them owner, admin, member or viewer access.</p>
+              </div>
+              <Button asChild size="sm" variant="accent"><Link href="/dashboard/billing">See plans</Link></Button>
+            </div>
+          )}
+          {canInvite && (
             <form
               className="flex flex-col gap-2 sm:flex-row"
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                void run(async () => { await api(`/api/v1/orgs/${org.id}/members`, { method: "POST", body: JSON.stringify({ email, role: newRole }) }); setEmail(""); }, "Member added");
+                setInviting(true);
+                try {
+                  const res = await api<{ emailSent: boolean; inviteUrl: string }>(`/api/v1/orgs/${org.id}/invitations`, { method: "POST", body: JSON.stringify({ email, role: newRole }) });
+                  setEmail("");
+                  if (res.emailSent) toast.success("Invitation sent", "They will get an e-mail with a link to join.");
+                  else {
+                    await navigator.clipboard?.writeText(res.inviteUrl).catch(() => undefined);
+                    toast.success("Invitation created", "E-mail is not configured, so the invite link was copied to your clipboard.");
+                  }
+                  await load();
+                } catch (err) {
+                  toast.error("Could not invite", errorMessage(err));
+                } finally {
+                  setInviting(false);
+                }
               }}
             >
               <Input type="email" placeholder="teammate@company.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" />
@@ -82,12 +113,32 @@ export function TeamClient({ org, role, currentUserId }: { org: { id: string; na
                 <option value="member">Member</option>
                 <option value="admin">Admin</option>
               </Select>
-              <Button type="submit" disabled={!email}>
-                <UserPlus /> Add
+              <Button type="submit" disabled={!email} loading={inviting}>
+                {!inviting && <Mail />} Invite
               </Button>
             </form>
           )}
-          {isAdmin && !org.isPersonal && <p className="text-xs text-muted-foreground">They need to have signed in to Orb once. {ROLE_HELP[newRole]}.</p>}
+          {canInvite && <p className="text-xs text-muted-foreground">{ROLE_HELP[newRole]}. {plan.maxMembers - (members?.length ?? 0) - invites.length} seat(s) left on the {plan.name} plan. Invitations expire after 7 days.</p>}
+
+          {invites.length > 0 && (
+            <div className="overflow-hidden rounded-lg border">
+              <p className="border-b bg-secondary/50 px-3.5 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Pending invitations</p>
+              <ul className="divide-y">
+                {invites.map((i) => (
+                  <li key={i.id} className="flex items-center gap-3 px-3.5 py-2.5">
+                    <span className="flex size-8 items-center justify-center rounded-full border border-dashed text-muted-foreground"><Mail className="size-3.5" /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{i.email}</p>
+                      <p className="truncate text-xs text-muted-foreground">Invited as {i.role} · expires {new Date(i.expiresAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</p>
+                    </div>
+                    <Button size="icon-sm" variant="ghost" aria-label={`Revoke invitation for ${i.email}`} onClick={() => run(() => api(`/api/v1/orgs/${org.id}/invitations/${i.id}`, { method: "DELETE" }), "Invitation revoked")}>
+                      <X />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-lg border">
             {members === null ? (

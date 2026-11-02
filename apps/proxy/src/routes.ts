@@ -13,7 +13,9 @@ export type Route =
   | { kind: 'redirect'; location: string; status: 308 }
   | { kind: 'static'; projectId: string; deploymentId: string }
   | { kind: 'service'; projectId: string; deploymentId: string; endpoints: Endpoint[] }
-  | { kind: 'none'; reason: 'not_found' | 'no_deployment' | 'no_instances' };
+  | { kind: 'none'; reason: 'not_found' | 'no_deployment' | 'no_instances' }
+  /** A free-plan service that was stopped for being idle: the edge starts it and shows a waiting page. */
+  | { kind: 'sleeping'; projectId: string; deploymentId: string };
 
 export function normalizeHost(raw: string | undefined): string {
   return (raw ?? '').toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
@@ -62,14 +64,16 @@ export class RouteResolver {
     return pending;
   }
 
+  private trackHost(projectId: string, host: string) {
+    let set = this.hostsByProject.get(projectId);
+    if (!set) this.hostsByProject.set(projectId, (set = new Set()));
+    set.add(host);
+  }
+
   private remember(host: string, route: Route, projectId?: string) {
     const ttl = route.kind === 'none' || route.kind === 'redirect' ? this.config.negativeTtlMs : this.config.routeTtlMs;
     this.cache.set(host, route, { ttl });
-    if (projectId) {
-      let set = this.hostsByProject.get(projectId);
-      if (!set) this.hostsByProject.set(projectId, (set = new Set()));
-      set.add(host);
-    }
+    if (projectId) this.trackHost(projectId, host);
   }
 
   private async lookup(host: string): Promise<Route> {
@@ -139,7 +143,16 @@ export class RouteResolver {
       .from(instances)
       .where(and(eq(instances.deploymentId, deploymentId), eq(instances.status, 'RUNNING')));
     const endpoints = running.flatMap((i) => (i.address && i.port ? [{ id: i.id, address: i.address, port: i.port }] : []));
-    if (endpoints.length === 0) return this.none(host, 'no_instances', projectId);
+    if (endpoints.length === 0) {
+      const [row] = await db.select({ sleepingAt: projects.sleepingAt }).from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (row?.sleepingAt) {
+        const sleeping: Route = { kind: 'sleeping', projectId, deploymentId };
+        this.cache.set(host, sleeping, { ttl: this.config.negativeTtlMs });
+        this.trackHost(projectId, host);
+        return sleeping;
+      }
+      return this.none(host, 'no_instances', projectId);
+    }
     const route: Route = { kind: 'service', projectId, deploymentId, endpoints };
     this.remember(host, route, projectId);
     return route;

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Laptop, LogOut, Moon, Palette, Sun, User } from "lucide-react";
+import { Bell, KeyRound, Laptop, LogOut, Moon, Palette, Sun, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut, useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,13 @@ import { Field, Input } from "@/components/ui/input";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/page";
 import { useTheme, type ThemeChoice } from "@/components/app/theme";
+import { NotificationsSection } from "./NotificationsSection";
 import { TokensSection } from "./TokensSection";
 
-type Tab = "profile" | "tokens" | "appearance";
+type Tab = "profile" | "notifications" | "tokens" | "appearance";
 const TABS: TabItem<Tab>[] = [
   { id: "profile", label: "Profile", icon: User },
+  { id: "notifications", label: "Notifications", icon: Bell },
   { id: "tokens", label: "API tokens", icon: KeyRound },
   { id: "appearance", label: "Appearance", icon: Palette },
 ];
@@ -60,6 +62,8 @@ export function SettingsClient() {
           </CardFooter>
         </Card>
       )}
+
+      {tab === "notifications" && <NotificationsSection email={user?.email} />}
 
       {tab === "tokens" && <TokensSection />}
 

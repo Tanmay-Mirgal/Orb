@@ -16,12 +16,15 @@ export type Permission =
   | 'env:write'
   | 'domain:manage'
   | 'audit:read'
-  | 'token:manage';
+  | 'token:manage'
+  | 'billing:read'
+  | 'billing:manage';
 
 const VIEWER: Permission[] = ['org:read', 'members:read', 'project:read'];
 const MEMBER: Permission[] = [...VIEWER, 'project:create', 'project:update', 'deployment:create', 'env:read', 'env:write', 'token:manage'];
-const ADMIN: Permission[] = [...MEMBER, 'project:delete', 'deployment:promote', 'domain:manage', 'members:manage', 'org:update', 'audit:read'];
-const OWNER: Permission[] = [...ADMIN, 'org:delete'];
+const ADMIN: Permission[] = [...MEMBER, 'project:delete', 'deployment:promote', 'domain:manage', 'members:manage', 'org:update', 'audit:read', 'billing:read'];
+// Only owners can spend the team's money or end a plan.
+const OWNER: Permission[] = [...ADMIN, 'org:delete', 'billing:manage'];
 
 const MATRIX: Record<Role, ReadonlySet<Permission>> = {
   viewer: new Set(VIEWER),

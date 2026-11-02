@@ -76,6 +76,10 @@ export const organizations = pgTable('organizations', {
   name: varchar('name', { length: 255 }).notNull(),
   slug: varchar('slug', { length: 64 }).notNull().unique(),
   plan: varchar('plan', { length: 32 }).notNull().default('free'),
+  /** When a paid/granted plan lapses and the team falls back to Hobby. Null for the free plan. */
+  planExpiresAt: timestamp('plan_expires_at'),
+  /** free | paid (Razorpay) | grant (complimentary, see plan_grants) */
+  planSource: varchar('plan_source', { length: 16 }).notNull().default('free'),
   isPersonal: boolean('is_personal').notNull().default(false),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -136,6 +140,94 @@ export const auditLogs = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Team invitations, billing and notifications
+// ---------------------------------------------------------------------------
+export const invitations = pgTable(
+  'invitations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    email: varchar('email', { length: 254 }).notNull(),
+    role: varchar('role', { length: 16 }).notNull().default('member'),
+    /** SHA-256 of the token in the invitation link; the token itself only ever exists in the e-mail. */
+    tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+    invitedBy: text('invited_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at').notNull(),
+    acceptedAt: timestamp('accepted_at'),
+    revokedAt: timestamp('revoked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('invitations_org_idx').on(t.orgId), index('invitations_email_idx').on(t.email)],
+);
+
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    plan: varchar('plan', { length: 32 }).notNull(),
+    /** monthly | yearly */
+    billingInterval: varchar('billing_interval', { length: 16 }).notNull(),
+    /** Smallest currency unit (paise). */
+    amount: integer('amount').notNull(),
+    currency: varchar('currency', { length: 8 }).notNull().default('INR'),
+    razorpayOrderId: varchar('razorpay_order_id', { length: 64 }).notNull().unique(),
+    razorpayPaymentId: varchar('razorpay_payment_id', { length: 64 }).unique(),
+    /** created | paid | failed */
+    status: varchar('status', { length: 16 }).notNull().default('created'),
+    method: varchar('method', { length: 32 }),
+    periodStart: timestamp('period_start'),
+    periodEnd: timestamp('period_end'),
+    failureReason: text('failure_reason'),
+    paidAt: timestamp('paid_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('payments_org_created_idx').on(t.orgId, t.createdAt)],
+);
+
+/** Complimentary plans by e-mail. Applied to the teams a (verified) user owns when they sign in or create a team. */
+export const planGrants = pgTable('plan_grants', {
+  email: varchar('email', { length: 254 }).primaryKey(),
+  plan: varchar('plan', { length: 32 }).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
+    category: varchar('category', { length: 24 }).notNull(),
+    type: varchar('type', { length: 48 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body'),
+    href: varchar('href', { length: 512 }),
+    readAt: timestamp('read_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('notifications_user_created_idx').on(t.userId, t.createdAt)],
+);
+
+export const notificationPreferences = pgTable('notification_preferences', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** `{ [category]: { email: boolean } }`, see shared/notifications. */
+  categories: jsonb('categories').$type<Record<string, { email: boolean }>>().notNull().default({}),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Projects & deployments
 // ---------------------------------------------------------------------------
 export const projects = pgTable(
@@ -167,6 +259,8 @@ export const projects = pgTable(
     cronSchedule: varchar('cron_schedule', { length: 100 }),
     autoDeploy: boolean('auto_deploy').notNull().default(true),
     previewDeployments: boolean('preview_deployments').notNull().default(false),
+    /** Set while an idle free-plan web service is stopped; the next request wakes it up. */
+    sleepingAt: timestamp('sleeping_at'),
     /** Deployment that `<slug>.<base-domain>` and the project's custom domains currently serve. */
     currentDeploymentId: uuid('current_deployment_id').references((): AnyPgColumn => deployments.id, {
       onDelete: 'set null',
@@ -335,3 +429,7 @@ export type Domain = typeof domains.$inferSelect;
 export type EnvironmentVariable = typeof environmentVariables.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
+export type Invitation = typeof invitations.$inferSelect;
+export type Payment = typeof payments.$inferSelect;
+export type PlanGrant = typeof planGrants.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

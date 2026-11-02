@@ -68,12 +68,15 @@ Everything a customer needs is built in: environment variables, custom domains w
 | Redirects / rewrites / headers config | ✓ | ✓ | ✅ `orb.json` |
 | Build logs (live) + runtime logs | ✓ | ✓ | ✅ cursor-polled from Redis, archived to object storage |
 | Analytics (requests, bandwidth, latency, errors) | ✓ | – | ✅ edge counters → hourly rollups |
-| Teams, roles, audit log | ✓ | ✓ | ✅ owner / admin / member / viewer |
+| Teams, roles, audit log | ✓ | ✓ | ✅ owner / admin / member / viewer, **e-mail invitations** (7-day links, accepted by the invited address) |
+| Alerts & notifications | ✓ | ✓ | ✅ in-app inbox (bell) + e-mail via plain nodemailer/SMTP (a Gmail app password is enough): deploys, domains, service down, team, billing, security; per-category opt-out |
 | REST API + personal access tokens | ✓ | ✓ | ✅ `/api/v1/*` |
-| Plans & quotas | ✓ | ✓ | ✅ enforced server-side (billing/Stripe: 🛣) |
+| Plans & quotas | ✓ | ✓ | ✅ enforced server-side |
+| Payments | ✓ | ✓ | ✅ Razorpay (UPI/cards/netbanking), prepaid month/year, signature-verified + webhook, expiry reminders and auto-fallback to Hobby |
 | Metrics, health probes | ✓ | ✓ | ✅ `/healthz` `/readyz` `/metrics` on every service |
 | Global multi-region edge / anycast CDN | ✓ | 🟡 | 🟡 put Cloudflare/any CDN in front; multi-region 🛣 |
-| Scale-to-zero, autoscaling, persistent disks, managed DBs | – | ✓ | 🛣 |
+| Scale-to-zero | – | ✓ | ✅ Hobby web services sleep after 20 idle min, edge wakes them on the next request (see `docs/COST_OPTIMIZATION.md`) |
+| Autoscaling, persistent disks, managed DBs | – | ✓ | 🛣 |
 | Preview comments, PR status checks | ✓ | 🟡 | 🛣 |
 
 ---
@@ -387,7 +390,7 @@ Checked in this repository's development environment:
 
 ## 14. Roadmap
 
-Not implemented yet (the architecture leaves room for each): Stripe billing & metering · e-mail invitations and notifications · GitHub App install flow UI & PR comments/status checks · scale-to-zero and autoscaling · persistent disks, managed Postgres/Redis, private networking between services · wildcard/transfer of custom domains · image/artifact garbage collection on registries and runner disks · per-node runner tokens · multi-region edge/runners · build cache sharing between workers · Dockerfile-less Rust/Java/PHP/Ruby support (they work today via Dockerfile) · CLI.
+Not implemented yet (the architecture leaves room for each): usage-based metering and proration for plan changes · GST invoices · GitHub App install flow UI & PR comments/status checks · autoscaling · persistent disks, managed Postgres/Redis, private networking between services · wildcard/transfer of custom domains · image/artifact garbage collection on registries and runner disks · per-node runner tokens · multi-region edge/runners · build cache sharing between workers · Dockerfile-less Rust/Java/PHP/Ruby support (they work today via Dockerfile) · CLI.
 
 ---
 

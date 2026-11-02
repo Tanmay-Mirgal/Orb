@@ -8,3 +8,6 @@ dist
 *.tsbuildinfo
 .orb-data
 coverage
+
+# Generated launch-video workspace (the web copy lives in apps/web/public/media)
+brag-output/

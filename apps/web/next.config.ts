@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../../"),
   transpilePackages: ["database", "shared", "storage", "core"],
   // Native / worker-thread heavy packages must not be bundled.
-  serverExternalPackages: ["pino", "bullmq", "ioredis", "prom-client", "postgres", "@aws-sdk/client-s3", "@aws-sdk/lib-storage"],
+  serverExternalPackages: ["pino", "bullmq", "ioredis", "prom-client", "postgres", "@aws-sdk/client-s3", "@aws-sdk/lib-storage", "nodemailer"],
   poweredByHeader: false,
   async headers() {
     return [

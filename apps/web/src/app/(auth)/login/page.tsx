@@ -23,7 +23,10 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await signIn.social({ provider: "github", callbackURL: "/dashboard" });
+      // `?next=/invite/…` brings people back to where they were headed (open redirects are not possible: local paths only).
+      const next = new URLSearchParams(window.location.search).get("next");
+      const target = next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/dashboard";
+      await signIn.social({ provider: "github", callbackURL: target });
     } catch {
       setError("We couldn't reach GitHub. Please try again.");
       setLoading(false);

@@ -742,6 +742,34 @@ CloudWatch → Alarms: `CPUUtilization > 80%` (15 min), `StatusCheckFailed`. Dis
 
 ---
 
+## 12b. Payments (Razorpay), e-mail aur cost controls
+
+Ye teen cheezein naye `.env` variables se chalti hain (poori list `.env.example` me hai). Server ke `.env` me ye add karo, phir `orb up -d --build` (migration `0002`/`0003` apne aap chalti hai).
+
+**Razorpay**
+1. Dashboard → *Account & Settings → API keys*: `NEXT_PUBLIC_RAZORPAY_KEY_ID` aur `RAZORPAY_KEY_SECRET`. Pehle `rzp_test_…` keys se ek test payment karke dekh lo; `rzp_live_…` par asli paisa katta hai.
+2. Dashboard → *Webhooks → Add*: URL `https://orb.<tumhara-domain>/api/webhooks/razorpay`, events `payment.captured`, `order.paid`, `payment.failed`. Jo secret tum yahan set karoge wahi `RAZORPAY_WEBHOOK_SECRET` me daalo. (Isse wo case bhi cover hota hai jab buyer payment ke baad tab band kar de.)
+3. Plans prepaid hain (1 mahina / 1 saal), apne aap renew nahi hote. Prices `packages/shared/src/plans.ts` me (`priceInrMonth`, `priceInrYear`).
+
+**E-mail (invitations, deploy/domain alerts, receipts)**
+- Koi AWS service nahi, sirf nodemailer + SMTP. Sabse simple: Gmail. Google Account → Security → 2-Step Verification on → *App passwords* → ek 16-character password banao. Phir `.env` me sirf do lines:
+  ```
+  SMTP_USER=tumhara@gmail.com
+  SMTP_PASSWORD=abcd efgh ijkl mnop
+  ```
+  (`@gmail.com` user ho to host `smtp.gmail.com` aur sender wahi address apne aap ban jaata hai; spaces password me se hata diye jaate hain.) Gmail ki limit ~500 mails/din hai, jo alerts + invites ke liye kaafi hai. Aur bada chahiye to koi bhi doosra SMTP (`SMTP_HOST`, `SMTP_PORT`) chalega.
+- `SMTP_USER`/`SMTP_HOST` khaali ho to mail sirf log hoti hai (app phir bhi chalta hai).
+
+**Owner ka complimentary Team plan**
+`tanmaymirgal26@gmail.com` ko 5 saal ka Team plan migration `0003_owner_plan_grant.sql` se milta hai (table `plan_grants`). Wo email sign-in par verified honi chahiye. Is user ki saari owned teams (nayi bhi) Team plan par rehti hain. Aur kisi ko dena ho:
+```bash
+orb exec postgres psql -U orb -d orb -c "insert into plan_grants (email, plan, expires_at, note) values ('naam@example.com','pro', now() + interval '1 year', 'gift')"
+```
+
+**Cost:** scale-to-zero, limits aur AWS settings ke liye `docs/COST_OPTIMIZATION.md`.
+
+---
+
 ## 13. Troubleshooting
 
 | Dikkat | Kaaran / Fix |

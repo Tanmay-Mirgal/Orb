@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_ENV_VALUE_BYTES, PROJECT_TYPES, ROLES } from './constants';
-import { INSTANCE_PLANS } from './plans';
+import { INSTANCE_PLANS, PAID_PLAN_IDS } from './plans';
+import { NOTIFICATION_CATEGORIES } from './notifications';
 import { ENV_KEY_PATTERN, RESERVED_ENV_KEYS } from './env';
 
 /**
@@ -124,3 +125,34 @@ export const createTokenSchema = z.object({
   name: z.string().trim().min(2).max(60),
   expiresInDays: z.number().int().min(1).max(365).nullish(),
 });
+
+export const inviteMemberSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  role: z.enum(['viewer', 'member', 'admin', 'owner']).default('member'),
+});
+
+export const acceptInvitationSchema = z.object({ token: z.string().min(20).max(128) });
+
+export const checkoutSchema = z.object({
+  plan: z.enum(PAID_PLAN_IDS as unknown as [string, ...string[]]),
+  interval: z.enum(['monthly', 'yearly']).default('monthly'),
+});
+
+/** What Razorpay Checkout hands back to the browser after a successful payment. */
+export const verifyPaymentSchema = z.object({
+  razorpay_order_id: z.string().min(5).max(64),
+  razorpay_payment_id: z.string().min(5).max(64),
+  razorpay_signature: z.string().min(32).max(128),
+});
+
+export const markNotificationsReadSchema = z.object({
+  ids: z.array(z.string().uuid()).max(100).optional(),
+  all: z.boolean().optional(),
+});
+
+export const notificationPrefsSchema = z.object(
+  Object.fromEntries(NOTIFICATION_CATEGORIES.map((c) => [c, z.object({ email: z.boolean() }).optional()])) as Record<
+    (typeof NOTIFICATION_CATEGORIES)[number],
+    z.ZodOptional<z.ZodObject<{ email: z.ZodBoolean }>>
+  >,
+);

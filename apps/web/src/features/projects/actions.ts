@@ -2,12 +2,13 @@
 
 import { cookies, headers } from "next/headers";
 import {
-  and, count, deployments, desc, domains, eq, inArray, instances, memberships, organizations, projectRepositories, projects,
+  and, count, deployments, desc, domains, eq, gte, inArray, instances, isNull, memberships, notifications, organizations, projectRepositories, projects, sql, usageHourly, users,
 } from "database";
-import { getOrgPlan } from "shared";
+import { can, getOrgPlan } from "shared";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ORG_COOKIE, resolveActiveOrg } from "@/server/orgs";
+import { listPayments, razorpayConfig } from "@/server/services/billing";
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -28,6 +29,11 @@ export async function getActiveContext() {
   };
 }
 
+async function countUnread(userId: string): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(notifications).where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+  return row?.n ?? 0;
+}
+
 /** Everything the app shell needs: user, teams, palette entries and the plan meter. */
 export async function getShellData() {
   const ctx = await getActiveContext();
@@ -43,7 +49,8 @@ export async function getShellData() {
     teams: ctx.teams.map((t) => ({ id: t.id, name: t.name, role: t.role, isPersonal: t.isPersonal })),
     activeTeamId: ctx.org.id,
     projects: rows,
-    plan: { name: plan.name, projects: rows.length, maxProjects: plan.maxProjects },
+    plan: { id: plan.id, name: plan.name, projects: rows.length, maxProjects: plan.maxProjects, expiresAt: ctx.org.planExpiresAt ? ctx.org.planExpiresAt.toISOString() : null, source: ctx.org.planSource },
+    unreadNotifications: await countUnread(ctx.user.id),
   };
 }
 
@@ -79,7 +86,7 @@ export async function getProjectCards() {
 }
 
 export async function getOverview() {
-  const { org, user } = await getActiveContext();
+  const { org, user, role } = await getActiveContext();
   const plan = getOrgPlan(org.plan);
   const cards = await getProjectCards();
   const ids = cards.map((c) => c.project.id);
@@ -111,16 +118,50 @@ export async function getOverview() {
     ? await db.select({ n: count() }).from(instances).where(and(inArray(instances.projectId, ids), eq(instances.status, "RUNNING")))
     : [{ n: 0 }];
 
+  // Requests per hour for the last 24 hours across the team (what the edge counted), as a fixed-length series.
+  const HOUR = 3_600_000;
+  const lastHour = Math.floor(Date.now() / HOUR) * HOUR;
+  const since = new Date(lastHour - 23 * HOUR);
+  const traffic = ids.length
+    ? await db
+        .select({ bucket: usageHourly.bucket, requests: sql<number>`sum(${usageHourly.requests})::float8`, bytes: sql<number>`sum(${usageHourly.bytesOut})::float8` })
+        .from(usageHourly)
+        .where(and(inArray(usageHourly.projectId, ids), gte(usageHourly.bucket, since)))
+        .groupBy(usageHourly.bucket)
+    : [];
+  const byHour = new Map(traffic.map((t) => [t.bucket.getTime(), t]));
+  const series = Array.from({ length: 24 }, (_, i) => Number(byHour.get(since.getTime() + i * HOUR)?.requests ?? 0));
+
+  const [memberTotal] = await db.select({ n: count() }).from(memberships).where(eq(memberships.orgId, org.id));
+  const memberPreview = await db
+    .select({ name: users.name, image: users.image })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(memberships.orgId, org.id))
+    .limit(5);
+
   return {
     userName: user.name,
     orgName: org.name,
-    plan: { id: plan.id, name: plan.name, maxProjects: plan.maxProjects },
+    isPersonal: org.isPersonal,
+    role,
+    plan: {
+      id: plan.id,
+      name: plan.name,
+      maxProjects: plan.maxProjects,
+      maxMembers: plan.maxMembers,
+      expiresAt: org.planExpiresAt ? org.planExpiresAt.toISOString() : null,
+      source: org.planSource,
+    },
     cards,
     recent,
     live: cards.filter((c) => c.current?.status === "READY").length,
     failing: cards.filter((c) => c.latest?.status === "FAILED").length,
+    sleeping: cards.filter((c) => c.project.sleepingAt).length,
     domains: domainCount?.n ?? 0,
     runningInstances: running?.n ?? 0,
+    traffic: { series, requests: series.reduce((a, b) => a + b, 0), bytes: traffic.reduce((a, t) => a + Number(t.bytes ?? 0), 0) },
+    members: { count: memberTotal?.n ?? 1, preview: memberPreview },
   };
 }
 
@@ -134,9 +175,12 @@ export async function getUsage() {
   const [running] = projectIds.length
     ? await db.select({ n: count() }).from(instances).where(and(inArray(instances.projectId, projectIds), inArray(instances.status, ["RUNNING", "STARTING"])))
     : [{ n: 0 }];
+  const billing = can(role, "billing:read") ? await listPayments(org.id) : [];
   return {
-    org: { id: org.id, name: org.name, plan: org.plan },
+    org: { id: org.id, name: org.name, plan: org.plan, planSource: org.planSource, planExpiresAt: org.planExpiresAt, isPersonal: org.isPersonal },
     role,
+    billingEnabled: razorpayConfig().enabled,
+    payments: billing.map((p) => ({ id: p.id, plan: p.plan, interval: p.billingInterval, amount: p.amount, status: p.status, method: p.method, paidAt: p.paidAt, createdAt: p.createdAt })),
     usage: {
       projects: projectCount?.n ?? 0,
       members: memberCount?.n ?? 0,

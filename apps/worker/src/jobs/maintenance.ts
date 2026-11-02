@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import type { Job } from 'bullmq';
 import { enqueueRelease, publishRouteInvalidation } from 'core';
 import {
@@ -30,8 +31,10 @@ import {
 } from 'shared';
 import { storageKeys } from 'storage';
 import type { WorkerContext } from '../context';
+import { notifyDeployment } from '../notifications';
 import { ACTIVE_INSTANCE_STATUSES, listLiveNodes, pickNodes } from '../orchestrator/nodes';
 import { drainDeployment, stopInstances } from '../orchestrator/release';
+import { notifyDomainChange, notifyServiceDown, runIdleSleep, runPlanExpiry } from './lifecycle';
 
 export const SCHEDULERS = {
   'domain-check': 5 * 60_000,
@@ -40,6 +43,8 @@ export const SCHEDULERS = {
   reaper: 5 * 60_000,
   gc: 60 * 60_000,
   'cron-sync': 60_000,
+  'plan-expiry': 30 * 60_000,
+  'idle-sleep': 5 * 60_000,
 } as const;
 
 export async function runMaintenanceJob(ctx: WorkerContext, job: Job): Promise<unknown> {
@@ -56,6 +61,10 @@ export async function runMaintenanceJob(ctx: WorkerContext, job: Job): Promise<u
       return garbageCollect(ctx);
     case 'cron-sync':
       return syncCronSchedules(ctx);
+    case 'plan-expiry':
+      return runPlanExpiry(ctx);
+    case 'idle-sleep':
+      return runIdleSleep(ctx);
     case 'cron-run':
       return runCron(ctx, job.data as { projectId: string });
     case 'drain':
@@ -92,6 +101,7 @@ async function checkDomains(ctx: WorkerContext) {
         changed++;
         await publishRouteInvalidation(ctx.redis, { projectId: row.projectId });
       }
+      await notifyDomainChange(ctx, result.domain, row.status);
     } catch (err) {
       ctx.logger.warn({ domain: row.domain, err: String(err) }, 'domain check failed');
     }
@@ -207,6 +217,7 @@ async function reconcileInstances(ctx: WorkerContext) {
     if (first) {
       ctx.logger.warn({ deploymentId }, 'instances lost: rescheduling');
       await enqueueRelease(ctx.releaseQueue, deploymentId, false);
+      await notifyServiceDown(ctx, deploymentId);
     }
   }
   return { lost };
@@ -228,6 +239,7 @@ async function reapStuckDeployments(ctx: WorkerContext) {
       ),
     )
     .returning({ id: deployments.id });
+  for (const d of stuck) await notifyDeployment(ctx, d.id, 'failed');
   return { reaped: stuck.length };
 }
 
@@ -242,7 +254,7 @@ async function garbageCollect(ctx: WorkerContext) {
   for (const project of rows) {
     const keep = getOrgPlan(project.plan).retainedDeployments;
     const old = await ctx.db
-      .select({ id: deployments.id, type: deployments.config })
+      .select({ id: deployments.id, type: deployments.config, imageRef: deployments.imageRef })
       .from(deployments)
       .where(and(eq(deployments.projectId, project.id), eq(deployments.status, DeploymentStatus.READY)))
       .orderBy(desc(deployments.createdAt))
@@ -253,10 +265,21 @@ async function garbageCollect(ctx: WorkerContext) {
       await drainDeployment(ctx, dep.id);
       await ctx.storage.deletePrefix(storageKeys.sitePrefix(dep.id)).catch(() => 0);
       await ctx.db.update(deployments).set({ status: DeploymentStatus.ARCHIVED, updatedAt: new Date() }).where(eq(deployments.id, dep.id));
+      // An archived deployment can never be started again, so its image only costs disk (EBS is billed per GB).
+      if (dep.imageRef) await removeImage(dep.imageRef);
       archived++;
     }
   }
   return { archived };
+}
+
+/** Best effort `docker rmi` on the worker's daemon; images shared with a running container are simply kept. */
+function removeImage(ref: string): Promise<void> {
+  return new Promise((resolve) => {
+    const child = spawn('docker', ['rmi', ref], { stdio: 'ignore' });
+    child.on('error', () => resolve());
+    child.on('close', () => resolve());
+  });
 }
 
 interface TeardownPayload {

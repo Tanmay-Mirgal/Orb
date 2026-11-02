@@ -1,9 +1,11 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { accounts, sessions, users, verifications } from 'database';
+import { emailTemplates, platformConfig } from 'core';
+import { accounts, notify, sessions, users, verifications } from 'database';
+import { NotificationType } from 'shared';
 import { db } from '@/lib/db';
 import { getRedis } from '@/server/infra';
-import { ensurePersonalOrganization } from '@/server/orgs';
+import { ensurePersonalOrganization, syncPlanGrants } from '@/server/orgs';
 
 const isProd = process.env.NODE_ENV === 'production';
 const appUrl = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -58,6 +60,23 @@ export const auth = betterAuth({
       create: {
         after: async (user) => {
           await ensurePersonalOrganization({ id: user.id, name: user.name });
+          await notify(db, {
+            userIds: [user.id],
+            category: 'product',
+            type: NotificationType.WELCOME,
+            title: 'Welcome to Orb',
+            body: 'Import a GitHub repository to deploy your first project.',
+            href: '/dashboard/new',
+            email: (r) => emailTemplates.welcome({ name: r.name, dashboardUrl: platformConfig().dashboardUrl }),
+          });
+        },
+      },
+    },
+    session: {
+      create: {
+        // Runs on every sign-in: keeps complimentary plans applied to teams the user has created since.
+        after: async (session) => {
+          await syncPlanGrants(session.userId);
         },
       },
     },

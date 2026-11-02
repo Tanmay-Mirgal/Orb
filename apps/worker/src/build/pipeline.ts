@@ -40,6 +40,7 @@ import {
 } from 'shared';
 import { storageKeys } from 'storage';
 import type { WorkerContext } from '../context';
+import { notifyDeployment } from '../notifications';
 import { BuildLog } from './buildlog';
 import {
   DOCKERIGNORE,
@@ -284,6 +285,7 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
       const result = await publishStaticSite({ storage: ctx.storage, deploymentId: deployment.id, dir: publishDir, config: orbConfig, limits: ctx.config, signal: abort.signal });
       log.line(`[publish] ${result.fileCount} file(s), ${(result.totalBytes / 1024 / 1024).toFixed(1)} MB`);
       await markReady(ctx, deployment, project, { fileCount: result.fileCount });
+      await notifyDeployment(ctx, deployment.id, 'ready');
       log.line(`[orb] ✓ Ready at ${deployment.subdomain ? deploymentUrl(deployment.subdomain) : deploymentUrl(project.slug ?? '')}`);
     } else {
       const tag = imageTag(ctx.config.registry, project.id, deployment.id);
@@ -341,6 +343,7 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
         updatedAt: new Date(),
       })
       .where(and(eq(deployments.id, deployment.id), inArray(deployments.status, [DeploymentStatus.BUILDING, DeploymentStatus.DEPLOYING, DeploymentStatus.QUEUED])));
+    if (!canceled) await notifyDeployment(ctx, deployment.id, 'failed');
   } finally {
     clearInterval(cancelWatcher);
     await log.flush();
@@ -395,7 +398,7 @@ async function markReady(ctx: WorkerContext, deployment: Deployment, project: Pr
     .returning({ id: deployments.id });
   if (updated.length === 0) throw new CanceledError();
   if (deployment.environment === 'production') {
-    await ctx.db.update(projects).set({ currentDeploymentId: deployment.id, updatedAt: now }).where(eq(projects.id, project.id));
+    await ctx.db.update(projects).set({ currentDeploymentId: deployment.id, sleepingAt: null, updatedAt: now }).where(eq(projects.id, project.id));
   }
   await publishRouteInvalidation(ctx.redis, { projectId: project.id });
 }
