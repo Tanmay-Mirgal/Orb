@@ -29,7 +29,7 @@ interface DomainRow {
 const TONE: Record<string, { label: string; variant: "success" | "info" | "warning" | "danger" }> = {
   active: { label: "Active", variant: "success" },
   verified: { label: "Waiting for DNS", variant: "info" },
-  pending: { label: "Verify ownership", variant: "warning" },
+  pending: { label: "Pending DNS", variant: "warning" },
   error: { label: "Error", variant: "danger" },
 };
 

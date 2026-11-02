@@ -62,6 +62,7 @@ export interface RoutingExpectation {
 export async function checkRouting(domain: string, expect: RoutingExpectation): Promise<DnsCheck & { kind: 'cname' | 'a' | 'none' }> {
   const r = resolver();
   const target = expect.cnameTarget.toLowerCase().replace(/\.$/, '');
+  const altTarget = target.replace(/^cname\./, '');
   let current = domain;
   try {
     for (let hop = 0; hop < 5; hop++) {
@@ -74,7 +75,7 @@ export async function checkRouting(domain: string, expect: RoutingExpectation): 
       }
       const next = cnames[0]?.toLowerCase().replace(/\.$/, '');
       if (!next) break;
-      if (next === target) return { ok: true, kind: 'cname', detail: `CNAME → ${target}` };
+      if (next === target || next === altTarget) return { ok: true, kind: 'cname', detail: `CNAME → ${next}` };
       current = next;
     }
 
@@ -85,7 +86,15 @@ export async function checkRouting(domain: string, expect: RoutingExpectation): 
     if (addresses.length === 0) {
       return { ok: false, kind: 'none', detail: `No CNAME or A record found for ${domain}` };
     }
-    if (expect.platformIps.length > 0 && addresses.some((ip) => expect.platformIps.includes(ip))) {
+
+    const validIps = new Set(expect.platformIps);
+    if (validIps.size === 0) {
+      const targetIps = await r.resolve4(target).catch(() => [] as string[]);
+      const altIps = await r.resolve4(altTarget).catch(() => [] as string[]);
+      for (const ip of [...targetIps, ...altIps]) validIps.add(ip);
+    }
+
+    if (validIps.size > 0 && addresses.some((ip) => validIps.has(ip))) {
       return { ok: true, kind: 'a', detail: `A record → ${addresses.join(', ')}` };
     }
     return {

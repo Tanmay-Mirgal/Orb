@@ -13,30 +13,31 @@ export interface DomainRefresh {
 
 /**
  * Re-evaluates a domain against DNS and persists the result.
- *   pending  -> ownership TXT record not found yet
- *   verified -> ownership proven, but DNS does not route to Orb (yet)
- *   active   -> ownership proven and DNS routes to Orb
- * Once ownership is proven it is kept (the edge only serves domains with `verifiedAt`).
+ *   pending  -> DNS does not route to Orb yet
+ *   active   -> DNS routes to Orb (or verified via TXT)
+ * A CNAME or A record pointing to Orb proves ownership directly.
  */
 export async function refreshDomain(db: Database, row: Domain): Promise<DomainRefresh> {
   const token = row.verificationToken ?? generateDomainVerificationToken();
-  let verifiedAt = row.verifiedAt;
-  let ownership: DomainRefresh['ownership'] = { ok: true, detail: 'Ownership already verified' };
+  const { cnameTarget, platformIps } = platformConfig();
 
-  if (!verifiedAt) {
+  // 1. Check CNAME or A routing first (most users only configure CNAME/A)
+  const routing = await checkRouting(row.domain, { cnameTarget, platformIps });
+
+  let verifiedAt = row.verifiedAt;
+  let ownership: DomainRefresh['ownership'] = { ok: true, detail: 'Ownership verified via DNS routing' };
+
+  if (routing.ok) {
+    // If DNS routes to Orb, ownership is proven by the CNAME/A record itself!
+    verifiedAt = verifiedAt ?? new Date();
+  } else if (!verifiedAt) {
+    // Fallback: check TXT record if someone added one
     ownership = await verifyOwnership(row.domain, token);
     if (ownership.ok) verifiedAt = new Date();
   }
 
-  let routing: DomainRefresh['routing'] = null;
-  let status: Domain['status'] = 'pending';
-  let lastError: string | null = ownership.ok ? null : ownership.detail;
-  if (verifiedAt) {
-    const { cnameTarget, platformIps } = platformConfig();
-    routing = await checkRouting(row.domain, { cnameTarget, platformIps });
-    status = routing.ok ? 'active' : 'verified';
-    lastError = routing.ok ? null : routing.detail;
-  }
+  const status: Domain['status'] = (verifiedAt && routing.ok) ? 'active' : (verifiedAt ? 'verified' : 'pending');
+  const lastError: string | null = routing.ok ? null : (verifiedAt ? routing.detail : (routing.detail || ownership.detail));
 
   const changed = status !== row.status || Boolean(verifiedAt) !== Boolean(row.verifiedAt);
   const now = new Date();

@@ -16,13 +16,10 @@ export interface DomainView extends Domain {
   instructions: DnsInstruction[];
 }
 
-/** What the customer must add at their DNS provider. */
+/** What the customer must add at their DNS provider. Only CNAME (or A for apex) is needed. */
 export function dnsInstructions(row: Domain): DnsInstruction[] {
   const { cnameTarget, platformIps } = platformConfig();
   const out: DnsInstruction[] = [];
-  if (row.verificationToken) {
-    out.push({ type: 'TXT', host: challengeHost(row.domain), value: challengeValue(row.verificationToken), purpose: 'ownership' });
-  }
   if (looksLikeApexDomain(row.domain) && platformIps.length > 0) {
     for (const ip of platformIps) out.push({ type: 'A', host: row.domain, value: ip, purpose: 'routing' });
   } else {

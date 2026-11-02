@@ -408,7 +408,7 @@ function DomainsTab({ projectId, canManage }: { projectId: string; canManage: bo
   };
 
   const tone = (s: string) => (s === "active" ? "success" : s === "verified" ? "info" : "warning");
-  const label = (s: string) => (s === "active" ? "Active" : s === "verified" ? "Waiting for DNS" : "Verify ownership");
+  const label = (s: string) => (s === "active" ? "Active" : s === "verified" ? "Waiting for DNS" : "Pending DNS");
 
   return (
     <div className="space-y-5">
@@ -418,7 +418,7 @@ function DomainsTab({ projectId, canManage }: { projectId: string; canManage: bo
             className="flex flex-col gap-3 p-4 sm:flex-row"
             onSubmit={(e) => {
               e.preventDefault();
-              void run("add", async () => { await api(`/api/v1/projects/${projectId}/domains`, { method: "POST", body: JSON.stringify({ domain: value }) }); setValue(""); }, "Domain added — now create the DNS records below");
+              void run("add", async () => { await api(`/api/v1/projects/${projectId}/domains`, { method: "POST", body: JSON.stringify({ domain: value }) }); setValue(""); }, "Domain added — configure the CNAME / A record below");
             }}
           >
             <Input placeholder="app.example.com" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Domain" />
