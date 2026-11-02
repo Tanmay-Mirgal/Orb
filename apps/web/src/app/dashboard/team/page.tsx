@@ -2,6 +2,7 @@ import { getActiveContext } from "@/features/projects/actions";
 import { TeamClient } from "@/features/team/TeamClient";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Team" };
 
 export default async function TeamPage() {
   const { org, role, user } = await getActiveContext();

@@ -1,16 +1,10 @@
-"use server";
+import { OverviewClient } from "@/components/dashboard/OverviewClient";
+import { getOverview } from "@/features/projects/actions";
 
-import { getUserProjects } from "@/features/projects/actions";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import { DashboardContentClient } from "@/components/dashboard/DashboardContentClient";
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Overview" };
 
 export default async function DashboardHome() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-  const userName = session?.user?.name || "Developer";
-  const projectsData = await getUserProjects();
-  
-  return <DashboardContentClient projectsData={projectsData} userName={userName} />;
+  const data = await getOverview();
+  return <OverviewClient data={JSON.parse(JSON.stringify(data))} />;
 }

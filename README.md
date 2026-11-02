@@ -280,6 +280,8 @@ sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy     # need
 
 ## 9. Using the platform
 
+**Dashboard UX** — a SaaS-style app shell: team switcher, collapsible mobile drawer, breadcrumbs, **⌘K / Ctrl+K command palette** (jump to any page or project), recent-deployments feed, light / dark / system theme (stored in a cookie, applied server-side: no flash), toasts and confirm dialogs instead of browser alerts, skeleton loaders, empty states with next actions, an onboarding checklist, a 3-step *New project* wizard, a *Usage & billing* page with plan meters, and a marketing landing page with pricing + FAQ. Design tokens live in `apps/web/src/app/globals.css`; shared components in `apps/web/src/components/ui` and `components/app`. Prices shown in the UI come from `ORG_PLANS[*].priceUsdMonth` in `packages/shared/src/plans.ts` (display-only placeholders — edit them).
+
 **Create a project** → pick the repo → Orb detects framework, commands, port; adjust and deploy. Settings live under *Project → Settings*; changes apply to the next deployment (deployments are immutable and keep a snapshot of the settings they were built with).
 
 **Supported out of the box** — Next.js, Nuxt, Remix/React Router, Astro (static + SSR), SvelteKit, Gatsby, Docusaurus, Eleventy, CRA, Vue CLI, Angular, Vite, Express, Fastify, Koa, Hono, Hapi, NestJS, generic Node, Flask, FastAPI, Django (set the start command), Go, plain HTML, and **anything with a Dockerfile**. npm / yarn / pnpm are detected from the lockfile; Node version from `.nvmrc` / `engines`.

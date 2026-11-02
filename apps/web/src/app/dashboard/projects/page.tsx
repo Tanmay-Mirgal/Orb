@@ -1,8 +1,10 @@
-import { getUserProjects } from "@/features/projects/actions";
-import { ProjectsContentClient } from "@/components/dashboard/ProjectsContentClient";
+import { ProjectsClient } from "@/components/dashboard/ProjectsClient";
+import { getProjectCards } from "@/features/projects/actions";
+
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Projects" };
 
 export default async function ProjectsPage() {
-  const projectsData = await getUserProjects();
-
-  return <ProjectsContentClient projectsData={projectsData} />;
+  const cards = await getProjectCards();
+  return <ProjectsClient cards={JSON.parse(JSON.stringify(cards))} />;
 }

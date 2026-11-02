@@ -1,415 +1,149 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { useSession } from "@/lib/auth-client";
 import {
-  GitBranch, Zap, Shield, Globe, ArrowRight, Menu, X,
-  CheckCircle2, Terminal as TerminalIcon, Clock, BarChart3
+  ArrowRight, BarChart3, Check, Cog, Globe, KeyRound, Lock, Menu, RotateCcw, Server, ShieldCheck, Timer, Users, X, Zap,
 } from "lucide-react";
+import { INSTANCE_PLANS, ORG_PLANS } from "shared";
+import { useSession } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Logo } from "@/components/app/page";
+import { ThemeToggle } from "@/components/app/theme";
+
+const NAV = [
+  { label: "Features", href: "#features" },
+  { label: "How it works", href: "#how" },
+  { label: "Pricing", href: "#pricing" },
+  { label: "FAQ", href: "#faq" },
+];
 
 export function LandingClient() {
   const { data: session } = useSession();
   return (
-    <div className="bg-[#09090b] text-white min-h-screen antialiased overflow-x-hidden">
-      <Navbar session={session} />
-      <Hero session={session} />
-      <SocialProof />
-      <Features />
-      <DeployFlow />
-      <FinalCTA session={session} />
+    <div className="min-h-screen overflow-x-clip bg-background">
+      <Navbar signedIn={Boolean(session)} />
+      <main>
+        <Hero signedIn={Boolean(session)} />
+        <Stack />
+        <Features />
+        <HowItWorks />
+        <Pricing />
+        <Faq />
+        <FinalCta signedIn={Boolean(session)} />
+      </main>
       <Footer />
     </div>
   );
 }
 
-/* ─────────────────────── NAVBAR ─────────────────────── */
-function Navbar({ session }: { session: any }) {
-  const [scrolled, setScrolled] = useState(false);
+function Navbar({ signedIn }: { signedIn: boolean }) {
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 12);
-    window.addEventListener("scroll", fn);
-    return () => window.removeEventListener("scroll", fn);
-  }, []);
-
   return (
-    <nav className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-      scrolled ? "bg-[#09090b]/80 backdrop-blur-xl border-b border-zinc-800/60" : ""
-    }`}>
-      <div className="max-w-6xl mx-auto px-5 h-[60px] flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 shrink-0">
-          <Image src="/logo.png" alt="Orb" width={26} height={26} className="rounded-[7px]" />
-          <span className="text-[15px] font-semibold tracking-tight text-white">Orb</span>
-        </Link>
-
-        <div className="hidden md:flex items-center gap-1">
-          {["Features", "Docs", "Changelog", "Pricing"].map((item) => (
-            <Link
-              key={item}
-              href={item === "Features" ? "#features" : "#"}
-              className="px-3.5 py-1.5 text-[13px] text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800/60 transition-all duration-150"
-            >
-              {item}
-            </Link>
+    <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-md">
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5">
+        <Logo />
+        <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
+          {NAV.map((n) => (
+            <a key={n.href} href={n.href} className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              {n.label}
+            </a>
           ))}
-        </div>
-
-        <div className="hidden md:flex items-center gap-3">
-          {session ? (
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-1.5 text-[13px] font-semibold bg-white text-black h-8 px-4 rounded-full hover:bg-zinc-100 transition-colors"
-            >
-              Dashboard <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+        </nav>
+        <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
+          {signedIn ? (
+            <Button asChild>
+              <Link href="/dashboard">
+                Dashboard <ArrowRight />
+              </Link>
+            </Button>
           ) : (
             <>
-              <Link href="/login" className="text-[13px] text-zinc-400 hover:text-white transition-colors h-8 px-3 flex items-center">
-                Log in
-              </Link>
-              <Link
-                href="/login"
-                className="flex items-center gap-1.5 text-[13px] font-semibold bg-white text-black h-8 px-4 rounded-full hover:bg-zinc-100 transition-colors"
-              >
-                Start for free <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
+              <Button asChild variant="ghost" className="hidden sm:inline-flex">
+                <Link href="/login">Log in</Link>
+              </Button>
+              <Button asChild className="hidden sm:inline-flex">
+                <Link href="/login">
+                  Start for free <ArrowRight />
+                </Link>
+              </Button>
             </>
           )}
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu" aria-expanded={open}>
+            {open ? <X /> : <Menu />}
+          </Button>
         </div>
-
-        <button className="md:hidden p-1.5 text-zinc-400 hover:text-white" onClick={() => setOpen(!open)}>
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
       </div>
-
       {open && (
-        <div className="md:hidden bg-[#09090b] border-b border-zinc-800/60 px-5 pb-5 pt-3 flex flex-col gap-1">
-          {["Features", "Docs", "Changelog", "Pricing"].map((item) => (
-            <Link key={item} href="#" onClick={() => setOpen(false)}
-              className="text-[14px] text-zinc-400 hover:text-white py-2 px-3 rounded-md hover:bg-zinc-800/60">{item}</Link>
+        <div className="border-t bg-background px-5 py-3 md:hidden">
+          {NAV.map((n) => (
+            <a key={n.href} href={n.href} onClick={() => setOpen(false)} className="block rounded-md px-2 py-2.5 text-sm">
+              {n.label}
+            </a>
           ))}
-          <div className="mt-3 pt-3 border-t border-zinc-800/60">
-            <Link href="/login" className="block w-full text-center bg-white text-black text-[13px] font-semibold py-2.5 rounded-full">
-              Start for free
-            </Link>
-          </div>
+          {!signedIn && (
+            <Button asChild className="mt-2 w-full">
+              <Link href="/login">Start for free</Link>
+            </Button>
+          )}
         </div>
       )}
-    </nav>
+    </header>
   );
 }
 
-/* ─────────────────────── HERO ─────────────────────── */
-function Hero({ session }: { session: any }) {
+const LOG = [
+  ["text-muted-foreground", "$ git push origin main"],
+  ["text-muted-foreground", "[git]     Cloning acme/storefront@main"],
+  ["text-muted-foreground", "[detect]  Next.js (node) → web service"],
+  ["text-muted-foreground", "[docker]  Building image in an isolated container…"],
+  ["text-muted-foreground", "[docker]  Image built · 38 s"],
+  ["text-muted-foreground", "[sched]   Starting 2 instances on node-1, node-2"],
+  ["text-success", "✓ Instance 4f9a21c0 healthy"],
+  ["text-success", "✓ Live: traffic switched — zero downtime"],
+];
+
+function Hero({ signedIn }: { signedIn: boolean }) {
   return (
-    <section className="relative pt-32 pb-20 px-5 overflow-hidden">
-      {/* Gradient top glow */}
-      <div aria-hidden className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-zinc-600/50 to-transparent" />
-      <div aria-hidden className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px]"
-        style={{ background: "radial-gradient(ellipse at top, rgba(99,102,241,0.08) 0%, transparent 60%)" }} />
-
-      <div className="max-w-4xl mx-auto text-center">
-        {/* Announcement chip */}
-        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-4 py-1.5 mb-8">
-          <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
-          <span className="text-[12px] font-medium text-indigo-300">Built for developers who ship fast</span>
-        </div>
-
-        <h1 className="text-[clamp(2.6rem,6.5vw,5rem)] font-black tracking-tight leading-[1.06] mb-6 text-white">
-          The deployment platform<br />
-          <span className="bg-gradient-to-b from-zinc-300 to-zinc-500 bg-clip-text text-transparent">
-            your team will love.
-          </span>
+    <section className="relative">
+      <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 h-[560px]" aria-hidden />
+      <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-16 text-center sm:pt-24">
+        <Badge variant="accent" className="mx-auto">
+          <Zap className="size-3" /> Deploy static sites, services, workers & cron jobs
+        </Badge>
+        <h1 className="mx-auto mt-6 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-6xl">
+          From <span className="text-accent">git push</span> to production in seconds.
         </h1>
-
-        <p className="text-[16px] md:text-[17px] text-zinc-400 leading-[1.75] max-w-2xl mx-auto mb-10">
-          Orb is a self-hosted platform that turns every git push into a live deployment.
-          Automatic builds, wildcard SSL, real-time logs — fully on your own infrastructure.
+        <p className="mx-auto mt-5 max-w-2xl text-balance text-base text-muted-foreground sm:text-lg">
+          Orb builds your repository, ships it behind automatic HTTPS and scales it across machines — with custom domains, instant rollbacks and zero-downtime releases. No servers to manage.
         </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
-          {session ? (
-            <Link href="/dashboard"
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[14px] font-semibold h-[44px] px-7 rounded-full transition-colors shadow-[0_0_0_1px_rgba(99,102,241,0.5),0_8px_30px_rgba(99,102,241,0.25)]">
-              Go to Dashboard <ArrowRight className="h-4 w-4" />
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Button asChild size="lg">
+            <Link href={signedIn ? "/dashboard" : "/login"}>
+              {signedIn ? "Open dashboard" : "Start deploying free"} <ArrowRight />
             </Link>
-          ) : (
-            <>
-              <Link href="/login"
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[14px] font-semibold h-[44px] px-7 rounded-full transition-colors shadow-[0_0_0_1px_rgba(99,102,241,0.5),0_8px_30px_rgba(99,102,241,0.25)]">
-                Start deploying free <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link href="https://github.com"
-                className="flex items-center gap-2 text-[14px] font-medium text-zinc-300 hover:text-white h-[44px] px-6 rounded-full border border-zinc-700/70 hover:border-zinc-600 bg-zinc-800/40 hover:bg-zinc-800/80 transition-all">
-                <GitBranch className="h-4 w-4" /> View on GitHub
-              </Link>
-            </>
-          )}
+          </Button>
+          <Button asChild size="lg" variant="outline">
+            <a href="#how">See how it works</a>
+          </Button>
         </div>
+        <p className="mt-4 text-xs text-muted-foreground">Sign in with GitHub · no credit card · free Hobby plan</p>
 
-        <p className="text-[12px] text-zinc-600">
-          No credit card · Self-host in 15 minutes · MIT License
-        </p>
-      </div>
-
-      {/* Terminal card */}
-      <div className="relative max-w-2xl mx-auto mt-16">
-        <div aria-hidden className="absolute -inset-px rounded-2xl bg-gradient-to-b from-zinc-700/50 to-transparent pointer-events-none" />
-        <TerminalCard />
-      </div>
-    </section>
-  );
-}
-
-/* ─────────────────────── TERMINAL ─────────────────────── */
-const LOG_LINES = [
-  { t: "cmd",  txt: "$ git push origin main" },
-  { t: "muted",txt: "Triggered by: push on main  ·  Orb v1.0" },
-  { t: "sep",  txt: "" },
-  { t: "info", txt: "▸  Detecting framework..." },
-  { t: "ok",   txt: "✓  Next.js 16 detected" },
-  { t: "info", txt: "▸  Provisioning container (512MB · 1.0 CPU)" },
-  { t: "ok",   txt: "✓  Dependencies installed  [18s]" },
-  { t: "ok",   txt: "✓  Production build complete  [34s]" },
-  { t: "ok",   txt: "✓  Artifact uploaded to MinIO" },
-  { t: "ok",   txt: "✓  SSL certificate issued via Caddy" },
-  { t: "sep",  txt: "" },
-  { t: "live", txt: "🚀  Deployed → https://my-app.orb.tanmaymirgal.dev" },
-];
-
-function TerminalCard() {
-  const [n, setN] = useState(0);
-
-  useEffect(() => {
-    if (n >= LOG_LINES.length) return;
-    const d = n === 0 ? 700 : LOG_LINES[n - 1].t === "sep" ? 200 : 500;
-    const id = setTimeout(() => setN(c => c + 1), d);
-    return () => clearTimeout(id);
-  }, [n]);
-
-  const cls: Record<string, string> = {
-    cmd:   "text-white font-mono font-semibold",
-    muted: "text-zinc-600 font-mono text-[11px]",
-    info:  "text-zinc-400 font-mono",
-    ok:    "text-emerald-400 font-mono",
-    live:  "text-indigo-300 font-mono font-semibold",
-    sep:   "h-3",
-  };
-
-  return (
-    <div className="rounded-2xl bg-[#0d0d10] border border-zinc-800/70 overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.7)]">
-      {/* Window bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800/60 bg-zinc-900/30">
-        <span className="w-3 h-3 rounded-full bg-zinc-700" />
-        <span className="w-3 h-3 rounded-full bg-zinc-700" />
-        <span className="w-3 h-3 rounded-full bg-zinc-700" />
-        <div className="ml-auto flex items-center gap-2">
-          <Image src="/logo.png" alt="" width={14} height={14} className="rounded opacity-60" />
-          <span className="text-[11px] text-zinc-500 font-mono">Build #47 · main</span>
-        </div>
-      </div>
-
-      <div className="px-5 py-5 text-[12.5px] leading-[1.8] min-h-[230px] space-y-0.5">
-        {LOG_LINES.slice(0, n).map((line, i) =>
-          line.t === "sep" ? (
-            <div key={i} className="h-3" />
-          ) : (
-            <div key={i} className={cls[line.t]}>{line.txt}</div>
-          )
-        )}
-        {n < LOG_LINES.length && (
-          <span className="inline-block w-[6px] h-[13px] bg-indigo-400/70 animate-[blink_1s_step-end_infinite] align-text-bottom" />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────── SOCIAL PROOF ─────────────────────── */
-function SocialProof() {
-  const stats = [
-    { value: "< 60s", label: "Avg. deploy time" },
-    { value: "100%", label: "Infra ownership" },
-    { value: "∞", label: "Projects supported" },
-    { value: "$0", label: "Platform fee" },
-  ];
-
-  return (
-    <div className="border-y border-zinc-800/50 bg-zinc-900/20">
-      <div className="max-w-6xl mx-auto px-5 py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
-        {stats.map((s, i) => (
-          <div key={i} className="text-center">
-            <div className="text-3xl md:text-4xl font-black text-white mb-1.5 tracking-tight">{s.value}</div>
-            <div className="text-[12px] text-zinc-500 font-medium uppercase tracking-widest">{s.label}</div>
+        <div className="mx-auto mt-14 max-w-3xl overflow-hidden rounded-2xl border bg-card text-left shadow-lg">
+          <div className="flex items-center gap-2 border-b px-4 py-3">
+            <span className="size-2.5 rounded-full bg-destructive/70" />
+            <span className="size-2.5 rounded-full bg-warning/70" />
+            <span className="size-2.5 rounded-full bg-success/70" />
+            <span className="ml-3 truncate font-mono text-xs text-muted-foreground">orb · deployment 4f9a21c0</span>
+            <Badge variant="success" dot className="ml-auto">Ready</Badge>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────── FEATURES ─────────────────────── */
-const FEATURES = [
-  {
-    icon: GitBranch,
-    color: "text-violet-400",
-    bg: "bg-violet-500/10 border-violet-500/20",
-    title: "Git-driven deploys",
-    desc: "Every push to GitHub triggers an automated build. Branch previews, production releases, and rollbacks — all from your existing workflow.",
-  },
-  {
-    icon: Globe,
-    color: "text-sky-400",
-    bg: "bg-sky-500/10 border-sky-500/20",
-    title: "Automatic HTTPS & subdomains",
-    desc: "Caddy provisions TLS certificates on-demand via Let's Encrypt. Your projects live at myapp.orb.yourdomain.com — secured from day one.",
-  },
-  {
-    icon: TerminalIcon,
-    color: "text-emerald-400",
-    bg: "bg-emerald-500/10 border-emerald-500/20",
-    title: "Real-time build logs",
-    desc: "Stream every log line as it happens directly from the build container. Powered by Redis pub-sub — no polling, zero delay.",
-  },
-  {
-    icon: Shield,
-    color: "text-orange-400",
-    bg: "bg-orange-500/10 border-orange-500/20",
-    title: "Sandboxed build containers",
-    desc: "Builds run in isolated Docker containers with configurable memory and CPU limits. Secure by default, configurable by need.",
-  },
-  {
-    icon: Zap,
-    color: "text-yellow-400",
-    bg: "bg-yellow-500/10 border-yellow-500/20",
-    title: "Encrypted environment variables",
-    desc: "Inject secrets per project. All environment variables are encrypted at rest using AES before storage in PostgreSQL.",
-  },
-  {
-    icon: BarChart3,
-    color: "text-pink-400",
-    bg: "bg-pink-500/10 border-pink-500/20",
-    title: "Multi-worker build queue",
-    desc: "Scale horizontally by adding worker nodes. BullMQ distributes build jobs across all workers via Redis. Stateless and elastic.",
-  },
-];
-
-function Features() {
-  return (
-    <section id="features" className="py-28 px-5">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-indigo-400 mb-4">Platform</p>
-          <h2 className="text-3xl md:text-[2.6rem] font-black tracking-tight text-white mb-4 leading-tight">
-            Everything your team needs<br className="hidden md:block" /> to ship confidently.
-          </h2>
-          <p className="text-[15px] text-zinc-400 max-w-xl mx-auto leading-relaxed">
-            Orb handles the entire deployment lifecycle — from git push to a live, secured URL — on your own servers.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {FEATURES.map((f, i) => (
-            <div
-              key={i}
-              className="group rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-6 hover:bg-zinc-900/60 hover:border-zinc-700/70 transition-all duration-200"
-            >
-              <div className={`w-9 h-9 rounded-lg border ${f.bg} flex items-center justify-center mb-5`}>
-                <f.icon className={`h-4 w-4 ${f.color}`} strokeWidth={1.75} />
-              </div>
-              <h3 className="text-[14px] font-bold text-white mb-2">{f.title}</h3>
-              <p className="text-[13px] text-zinc-500 leading-relaxed">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─────────────────────── DEPLOY FLOW ─────────────────────── */
-const STEPS = [
-  {
-    num: "1",
-    icon: GitBranch,
-    title: "Connect your repository",
-    desc: "Install the Orb GitHub App on any repository. One click — no YAML, no config files, no Docker knowledge required.",
-    tag: "GitHub App",
-  },
-  {
-    num: "2",
-    icon: Clock,
-    title: "Push → build → live",
-    desc: "Every git push triggers a build inside a sandboxed container. Your app is built, zipped, stored in MinIO, and served through the edge proxy.",
-    tag: "< 60 seconds",
-  },
-  {
-    num: "3",
-    icon: Globe,
-    title: "Manage from the dashboard",
-    desc: "Monitor deployments, stream build logs, manage custom domains, set environment variables, and roll back — all from one clean UI.",
-    tag: "Real-time",
-  },
-];
-
-function DeployFlow() {
-  return (
-    <section className="py-28 px-5 bg-zinc-950/50 border-y border-zinc-800/40">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-indigo-400 mb-4">How it works</p>
-          <h2 className="text-3xl md:text-[2.6rem] font-black tracking-tight text-white mb-4 leading-tight">
-            From zero to deployed<br className="hidden md:block" /> in three steps.
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {STEPS.map((s, i) => (
-            <div key={i} className="relative rounded-2xl border border-zinc-800/60 bg-[#0d0d10] p-7">
-              {/* Step number */}
-              <div className="flex items-center justify-between mb-6">
-                <div className="w-9 h-9 rounded-full border border-indigo-500/30 bg-indigo-500/10 flex items-center justify-center text-[13px] font-black text-indigo-400">
-                  {s.num}
-                </div>
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600 border border-zinc-800 rounded-full px-3 py-1">
-                  {s.tag}
-                </span>
-              </div>
-              <h3 className="text-[15px] font-bold text-white mb-2.5">{s.title}</h3>
-              <p className="text-[13px] text-zinc-500 leading-relaxed">{s.desc}</p>
-
-              {/* Connector arrow (between cards) */}
-              {i < STEPS.length - 1 && (
-                <div className="hidden md:flex absolute -right-3.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-zinc-900 border border-zinc-700 items-center justify-center">
-                  <ArrowRight className="h-3.5 w-3.5 text-zinc-500" />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Included checklist */}
-        <div className="mt-12 pt-10 border-t border-zinc-800/40">
-          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-zinc-600 mb-6 text-center">Included out of the box</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl mx-auto">
-            {[
-              "Automatic framework detection",
-              "Docker-sandboxed builds",
-              "Wildcard SSL via Caddy",
-              "MinIO artifact storage",
-              "Real-time log streaming",
-              "Encrypted env variables",
-              "Multi-worker build queue",
-              "Custom domain support",
-              "One-click rollbacks",
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-2.5 text-[13px] text-zinc-400">
-                <CheckCircle2 className="h-4 w-4 text-indigo-500 shrink-0" strokeWidth={2} />
-                {item}
-              </div>
+          <div className="space-y-1.5 bg-[#0a0a0c] p-5 font-mono text-[12.5px] leading-6 text-zinc-300">
+            {LOG.map(([tone, line], i) => (
+              <p key={i} className={`animate-fade-up ${tone === "text-success" ? "text-emerald-400" : "text-zinc-400"}`} style={{ animationDelay: `${i * 320}ms` }}>
+                {line}
+              </p>
             ))}
           </div>
         </div>
@@ -418,64 +152,184 @@ function DeployFlow() {
   );
 }
 
-/* ─────────────────────── FINAL CTA ─────────────────────── */
-function FinalCTA({ session }: { session: any }) {
+function Stack() {
+  const items = ["Next.js", "React", "Vue", "Astro", "Node.js", "Python", "Go", "Docker"];
   return (
-    <section className="py-28 px-5">
-      <div className="max-w-3xl mx-auto text-center">
-        <div className="inline-flex items-center gap-2 mb-7">
-          <Image src="/logo.png" alt="Orb" width={32} height={32} className="rounded-lg" />
-        </div>
-        <h2 className="text-3xl md:text-[2.6rem] font-black tracking-tight text-white mb-5 leading-tight">
-          Deploy your first project<br />in under 15 minutes.
-        </h2>
-        <p className="text-[15px] text-zinc-400 mb-10 leading-relaxed max-w-lg mx-auto">
-          Self-host Orb on any Linux server. One `.env` file, one `docker compose up` — and you're live.
-        </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          {session ? (
-            <Link href="/dashboard"
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[14px] font-semibold h-[46px] px-8 rounded-full transition-colors shadow-[0_0_0_1px_rgba(99,102,241,0.5),0_12px_40px_rgba(99,102,241,0.3)]">
-              Go to Dashboard <ArrowRight className="h-4 w-4" />
-            </Link>
-          ) : (
-            <>
-              <Link href="/login"
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[14px] font-semibold h-[46px] px-8 rounded-full transition-colors shadow-[0_0_0_1px_rgba(99,102,241,0.5),0_12px_40px_rgba(99,102,241,0.3)]">
-                Get started free <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link href="https://github.com"
-                className="flex items-center gap-2 text-[14px] font-medium text-zinc-300 hover:text-white h-[46px] px-7 rounded-full border border-zinc-700 hover:border-zinc-600 bg-zinc-800/40 hover:bg-zinc-800 transition-all">
-                <GitBranch className="h-4 w-4" /> Star on GitHub
-              </Link>
-            </>
-          )}
-        </div>
-
-        <p className="mt-6 text-[12px] text-zinc-600">
-          MIT License · No credit card · Self-hosted on your infrastructure
-        </p>
+    <section className="border-y bg-card/40 py-8" aria-label="Supported stacks">
+      <div className="mx-auto max-w-6xl px-5">
+        <p className="mb-4 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">Works with the tools you already use</p>
+        <ul className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3 text-sm font-medium text-muted-foreground">
+          {items.map((i) => (
+            <li key={i}>{i}</li>
+          ))}
+        </ul>
       </div>
     </section>
   );
 }
 
-/* ─────────────────────── FOOTER ─────────────────────── */
+const FEATURES = [
+  { icon: Zap, title: "Git-driven deploys", text: "Push to deploy. Every branch can get its own preview URL, every commit an immutable deployment." },
+  { icon: Server, title: "Services, workers & cron", text: "Run web services, background workers and scheduled jobs next to your static sites — from a repo or your own Dockerfile." },
+  { icon: RotateCcw, title: "Instant rollbacks", text: "New releases only get traffic once they are healthy. Roll back to any previous deployment in a click." },
+  { icon: Globe, title: "Custom domains & HTTPS", text: "Bring your own domain. Ownership is verified over DNS and certificates are issued and renewed automatically." },
+  { icon: Lock, title: "Secrets done right", text: "Environment variables are encrypted at rest, scoped per environment, and never shown again once saved." },
+  { icon: BarChart3, title: "Logs & analytics", text: "Live build and runtime logs, plus request, bandwidth and latency analytics for every project." },
+  { icon: Users, title: "Teams & roles", text: "Invite teammates with owner, admin, member or viewer roles. Every sensitive action lands in the audit log." },
+  { icon: KeyRound, title: "API & tokens", text: "Everything in the dashboard is available through a REST API with personal access tokens for CI." },
+];
+
+function Features() {
+  return (
+    <section id="features" className="mx-auto max-w-6xl scroll-mt-20 px-5 py-20">
+      <div className="mx-auto max-w-2xl text-center">
+        <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Everything you need to run in production</h2>
+        <p className="mt-3 text-muted-foreground">The workflow of a modern PaaS, on infrastructure you control.</p>
+      </div>
+      <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {FEATURES.map((f) => (
+          <div key={f.title} className="rounded-xl border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <span className="flex size-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
+              <f.icon className="size-5" />
+            </span>
+            <h3 className="mt-4 text-[15px] font-semibold">{f.title}</h3>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{f.text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    { n: 1, icon: Cog, title: "Connect a repository", text: "Sign in with GitHub and pick a repo. Orb detects the framework and fills in build, start and port settings." },
+    { n: 2, icon: Timer, title: "We build & release", text: "Your app is built in an isolated container, started on a healthy node, and only then promoted to production." },
+    { n: 3, icon: ShieldCheck, title: "Go live on your domain", text: "Add your domain, create two DNS records and get HTTPS automatically. Push again any time — or roll back." },
+  ];
+  return (
+    <section id="how" className="scroll-mt-20 border-y bg-card/40 py-20">
+      <div className="mx-auto max-w-6xl px-5">
+        <h2 className="mx-auto max-w-2xl text-center text-3xl font-semibold tracking-tight sm:text-4xl">Live in three steps</h2>
+        <ol className="mt-12 grid gap-6 md:grid-cols-3">
+          {steps.map((s) => (
+            <li key={s.n} className="relative rounded-xl border bg-card p-6 shadow-sm">
+              <span className="absolute -top-3 left-6 flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">{s.n}</span>
+              <s.icon className="mt-2 size-6 text-accent" />
+              <h3 className="mt-4 text-base font-semibold">{s.title}</h3>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{s.text}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function Pricing() {
+  const plans = Object.values(ORG_PLANS);
+  return (
+    <section id="pricing" className="mx-auto max-w-6xl scroll-mt-20 px-5 py-20">
+      <div className="mx-auto max-w-2xl text-center">
+        <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Simple, predictable pricing</h2>
+        <p className="mt-3 text-muted-foreground">Start free. Upgrade when you need more projects, bigger instances or a team.</p>
+      </div>
+      <div className="mt-12 grid gap-5 md:grid-cols-3">
+        {plans.map((p) => {
+          const popular = p.id === "pro";
+          const largest = INSTANCE_PLANS[p.allowedInstancePlans[p.allowedInstancePlans.length - 1]!]!;
+          const features = [
+            `${p.maxProjects} projects`,
+            `${p.maxMembers} team member${p.maxMembers === 1 ? "" : "s"}`,
+            `${p.maxDomainsPerProject} custom domains per project`,
+            `Up to ${largest.name} instances (${largest.cpuMillis / 1000} vCPU, ${largest.memoryMb >= 1024 ? `${largest.memoryMb / 1024} GB` : `${largest.memoryMb} MB`})`,
+            `Up to ${p.maxInstancesPerService} instance${p.maxInstancesPerService === 1 ? "" : "s"} per service`,
+            `${p.maxConcurrentBuilds} concurrent build${p.maxConcurrentBuilds === 1 ? "" : "s"}`,
+            p.previewDeployments ? "Preview deployments" : "Production deployments",
+          ];
+          return (
+            <div key={p.id} className={`relative flex flex-col rounded-2xl border bg-card p-6 shadow-sm ${popular ? "border-accent ring-2 ring-accent/20" : ""}`}>
+              {popular && <Badge variant="accent" className="absolute -top-3 left-6">Most popular</Badge>}
+              <h3 className="text-lg font-semibold">{p.name}</h3>
+              <p className="mt-3 text-4xl font-semibold tracking-tight">
+                ${p.priceUsdMonth}
+                <span className="text-sm font-normal text-muted-foreground"> / month</span>
+              </p>
+              <ul className="mt-6 flex-1 space-y-2.5 text-[13px]">
+                {features.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0 text-success" /> {f}
+                  </li>
+                ))}
+              </ul>
+              <Button asChild className="mt-8 w-full" variant={popular ? "accent" : "outline"} size="lg">
+                <Link href="/login">{p.priceUsdMonth === 0 ? "Start free" : `Choose ${p.name}`}</Link>
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+const FAQ = [
+  ["What can I deploy?", "Static sites (Vite, React, Astro, Docusaurus, plain HTML), SSR apps (Next.js, Nuxt, Remix), backend services (Node, Python, Go) and anything with a Dockerfile. You can also run background workers and cron jobs."],
+  ["How do custom domains work?", "Add your domain in the project, create the TXT record that proves ownership and a CNAME (or A record for apex domains). Orb verifies DNS automatically and provisions HTTPS."],
+  ["Is there downtime when I deploy?", "No. A new release only receives traffic after its instances pass health checks. If something fails, the previous deployment keeps serving."],
+  ["How are my secrets protected?", "Environment variables are encrypted at rest, bound to their project, masked in build logs and — when marked sensitive — never returned by the API."],
+  ["Can I use it from CI?", "Yes. Create a personal access token and call the REST API, or just push to Git: the GitHub webhook triggers deployments automatically."],
+  ["Can I self-host Orb?", "Yes. Orb is built to run on your own infrastructure — a single server to start, then add worker and runner machines as you grow."],
+];
+
+function Faq() {
+  return (
+    <section id="faq" className="mx-auto max-w-3xl scroll-mt-20 px-5 pb-20">
+      <h2 className="text-center text-3xl font-semibold tracking-tight sm:text-4xl">Frequently asked questions</h2>
+      <div className="mt-10 divide-y rounded-2xl border bg-card shadow-sm">
+        {FAQ.map(([q, a]) => (
+          <details key={q} className="group p-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-medium">
+              {q}
+              <span className="text-muted-foreground transition-transform group-open:rotate-45" aria-hidden>+</span>
+            </summary>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FinalCta({ signedIn }: { signedIn: boolean }) {
+  return (
+    <section className="px-5 pb-20">
+      <div className="mx-auto max-w-4xl rounded-3xl bg-primary px-6 py-14 text-center text-primary-foreground">
+        <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">Ship your next project on Orb</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm opacity-80">Import a repository and have a live HTTPS URL before your coffee cools.</p>
+        <Button asChild size="lg" variant="secondary" className="mt-8 bg-background text-foreground hover:bg-background/90">
+          <Link href={signedIn ? "/dashboard" : "/login"}>
+            {signedIn ? "Open dashboard" : "Get started free"} <ArrowRight />
+          </Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function Footer() {
   return (
-    <footer className="border-t border-zinc-800/50 px-5 py-8">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5 text-[12px] text-zinc-600">
-        <div className="flex items-center gap-2">
-          <Image src="/logo.png" alt="Orb" width={16} height={16} className="rounded opacity-50" />
-          <span>Orb Platform</span>
-        </div>
-        <span>© {new Date().getFullYear()} Orb. Built by Tanmay Mirgal.</span>
-        <div className="flex items-center gap-6">
-          <Link href="https://github.com" className="hover:text-zinc-300 transition-colors">GitHub</Link>
-          <Link href="#" className="hover:text-zinc-300 transition-colors">Docs</Link>
-          <Link href="#" className="hover:text-zinc-300 transition-colors">Privacy</Link>
-        </div>
+    <footer className="border-t">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 py-8 text-sm text-muted-foreground sm:flex-row">
+        <Logo size={22} />
+        <nav className="flex gap-5" aria-label="Footer">
+          {NAV.map((n) => (
+            <a key={n.href} href={n.href} className="hover:text-foreground">
+              {n.label}
+            </a>
+          ))}
+        </nav>
+        <p>© {new Date().getFullYear()} Orb</p>
       </div>
     </footer>
   );

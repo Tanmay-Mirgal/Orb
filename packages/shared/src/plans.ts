@@ -42,6 +42,8 @@ export interface OrgPlan {
   retainedDeployments: number;
   /** API requests / minute per organisation (token or session). */
   apiRatePerMinute: number;
+  /** Display-only list price for the pricing page / billing screen. Replace with your real pricing. */
+  priceUsdMonth: number;
 }
 
 export const ORG_PLANS: Readonly<Record<string, OrgPlan>> = {
@@ -58,6 +60,7 @@ export const ORG_PLANS: Readonly<Record<string, OrgPlan>> = {
     previewDeployments: false,
     retainedDeployments: 5,
     apiRatePerMinute: 120,
+    priceUsdMonth: 0,
   },
   pro: {
     id: 'pro',
@@ -72,6 +75,7 @@ export const ORG_PLANS: Readonly<Record<string, OrgPlan>> = {
     previewDeployments: true,
     retainedDeployments: 20,
     apiRatePerMinute: 600,
+    priceUsdMonth: 20,
   },
   team: {
     id: 'team',
@@ -86,6 +90,7 @@ export const ORG_PLANS: Readonly<Record<string, OrgPlan>> = {
     previewDeployments: true,
     retainedDeployments: 50,
     apiRatePerMinute: 3000,
+    priceUsdMonth: 99,
   },
 };
 export const DEFAULT_ORG_PLAN = 'free';

@@ -1,5 +1,7 @@
-import { DomainsContentClient } from "@/features/domains/components/DomainsContentClient";
+import { DomainsClient } from "@/features/domains/components/DomainsClient";
+
+export const metadata = { title: "Domains" };
 
 export default function DomainsPage() {
-  return <DomainsContentClient />;
+  return <DomainsClient />;
 }
