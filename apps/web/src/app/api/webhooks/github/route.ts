@@ -1,115 +1,107 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
+import { verifyGithubSignature } from 'core';
+import { eq, ilike, organizations, projectRepositories, projects } from 'database';
+import { branchName } from 'shared';
 import { db } from '@/lib/db';
-import { projectRepositories, projects, deployments, environmentVariables } from 'database';
-import { eq, and } from 'drizzle-orm';
-import { Queue } from 'bullmq';
-import { JobPayload } from 'shared';
-import Redis from 'ioredis';
+import { getRedis } from '@/server/infra';
+import { createDeployment } from '@/server/services/deployments';
+import { audit } from '@/server/audit';
 
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
-const queue = new Queue('deployments', { connection: connection as any });
+export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request) {
-  try {
-    const signature = req.headers.get('x-hub-signature-256');
-    const eventType = req.headers.get('x-github-event');
-    const rawBody = await req.text();
-
-    const secret = process.env.GITHUB_APP_WEBHOOK_SECRET;
-    if (secret && signature) {
-      const hmac = crypto.createHmac('sha256', secret);
-      const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-      
-      try {
-        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
-          return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-        }
-      } catch (e) {
-        return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 });
-      }
-    }
-
-    if (eventType !== 'push') {
-      return NextResponse.json({ message: 'Ignoring non-push event' });
-    }
-
-    const payload = JSON.parse(rawBody);
-    
-    // E.g. refs/heads/main
-    const ref = payload.ref;
-    if (!ref || !ref.startsWith('refs/heads/')) {
-      return NextResponse.json({ message: 'Not a branch push' });
-    }
-    const branch = ref.replace('refs/heads/', '');
-    
-    const githubRepositoryName = payload.repository?.full_name;
-    if (!githubRepositoryName) {
-      return NextResponse.json({ error: 'Missing repository full_name' }, { status: 400 });
-    }
-    
-    const commitHash = payload.head_commit?.id || payload.after;
-    const commitMessage = payload.head_commit?.message || 'Auto-deployment from GitHub push';
-
-    // Find linked projects
-    const linkedRepos = await db.select()
-      .from(projectRepositories)
-      .where(
-        and(
-          eq(projectRepositories.githubRepositoryName, githubRepositoryName),
-          eq(projectRepositories.branch, branch)
-        )
-      );
-
-    if (linkedRepos.length === 0) {
-      return NextResponse.json({ message: 'No linked projects found for this repo and branch' });
-    }
-
-    const results = [];
-
-    for (const repo of linkedRepos) {
-      const { projectId } = repo;
-      
-      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-      if (!project) continue;
-
-      const dbEnvVars = await db.select().from(environmentVariables).where(eq(environmentVariables.projectId, projectId));
-      const envVars = dbEnvVars.reduce((acc, curr) => {
-        acc[curr.key] = curr.value;
-        return acc;
-      }, {} as Record<string, string>);
-
-      // Create deployment
-      const [deployment] = await db.insert(deployments).values({
-        projectId,
-        status: 'QUEUED',
-        commitHash: commitHash ? commitHash.substring(0, 40) : null,
-        commitMessage: commitMessage ? commitMessage.substring(0, 255) : null,
-      }).returning();
-
-      // Dispatch job
-      const jobPayload: JobPayload = {
-        deploymentId: deployment.id,
-        projectId,
-        githubRepositoryName,
-        githubRepositoryId: repo.githubRepositoryId,
-        branch,
-        buildCommand: project.buildCommand || '',
-        outputDirectory: project.outputDirectory || '.next',
-        rootDirectory: project.rootDirectory || './',
-        installCommand: project.installCommand || 'npm install',
-        environmentVariables: envVars || {},
-      };
-
-      await queue.add('deploy-job', jobPayload);
-      results.push({ projectId, deploymentId: deployment.id });
-    }
-
-    return NextResponse.json({ success: true, triggeredDeployments: results });
-  } catch (error: any) {
-    console.error('Webhook error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
+interface PushPayload {
+  ref?: string;
+  after?: string;
+  deleted?: boolean;
+  repository?: { full_name?: string };
+  head_commit?: { id?: string; message?: string; author?: { name?: string } } | null;
+  pusher?: { name?: string };
 }
+
+/**
+ * GitHub push webhook => git-driven deployments.
+ *  - pushes to a project's production branch deploy to production (when auto-deploy is on);
+ *  - pushes to any other branch create a preview deployment (when the project and plan allow it).
+ * The HMAC signature is mandatory: there is no unauthenticated mode.
+ */
+export async function POST(req: Request) {
+  const secret = process.env.GITHUB_APP_WEBHOOK_SECRET;
+  if (!secret) {
+    return NextResponse.json({ error: 'Webhook secret is not configured' }, { status: 503 });
+  }
+
+  const rawBody = await req.text();
+  if (!verifyGithubSignature(rawBody, req.headers.get('x-hub-signature-256'), secret)) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+  }
+
+  const event = req.headers.get('x-github-event');
+  if (event === 'ping') return NextResponse.json({ ok: true });
+  if (event !== 'push') return NextResponse.json({ ignored: event });
+
+  // GitHub retries on timeouts: make delivery idempotent.
+  const delivery = req.headers.get('x-github-delivery');
+  if (delivery) {
+    const fresh = await getRedis().set(`orb:webhook:${delivery}`, '1', 'EX', 3600, 'NX');
+    if (!fresh) return NextResponse.json({ ignored: 'duplicate delivery' });
+  }
+
+  let payload: PushPayload;
+  try {
+    payload = JSON.parse(rawBody) as PushPayload;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const fullName = payload.repository?.full_name;
+  const ref = payload.ref;
+  if (!fullName || !ref?.startsWith('refs/heads/') || payload.deleted) {
+    return NextResponse.json({ ignored: 'not a branch push' });
+  }
+  const branch = ref.slice('refs/heads/'.length);
+  if (!branchName.safeParse(branch).success) return NextResponse.json({ ignored: 'unsupported branch name' });
+
+  const message = payload.head_commit?.message ?? '';
+  if (/\[(skip ci|ci skip|skip deploy|skip orb)\]/i.test(message)) {
+    return NextResponse.json({ ignored: 'skipped by commit message' });
+  }
+
+  const linked = await db
+    .select({ project: projects, repository: projectRepositories, org: organizations })
+    .from(projectRepositories)
+    .innerJoin(projects, eq(projects.id, projectRepositories.projectId))
+    .innerJoin(organizations, eq(organizations.id, projects.orgId))
+    .where(ilike(projectRepositories.githubRepositoryName, fullName));
+
+  const triggered: Array<{ projectId: string; deploymentId: string; environment: string }> = [];
+  for (const { project, repository, org } of linked) {
+    const isProduction = repository.branch === branch;
+    if (isProduction && !project.autoDeploy) continue;
+    if (!isProduction && !project.previewDeployments) continue;
+    try {
+      const deployment = await createDeployment({
+        project,
+        repository,
+        orgPlan: org.plan,
+        environment: isProduction ? 'production' : 'preview',
+        trigger: 'git_push',
+        branch,
+        commitSha: payload.after ?? payload.head_commit?.id ?? null,
+        commitMessage: message || null,
+        commitAuthor: payload.head_commit?.author?.name ?? payload.pusher?.name ?? null,
+      });
+      triggered.push({ projectId: project.id, deploymentId: deployment.id, environment: deployment.environment });
+      await audit(null, {
+        orgId: org.id,
+        action: 'deployment.create',
+        targetType: 'deployment',
+        targetId: deployment.id,
+        metadata: { trigger: 'git_push', branch, repo: fullName },
+      });
+    } catch (error) {
+      console.error(JSON.stringify({ level: 'error', msg: 'webhook deployment failed', projectId: project.id, err: String(error) }));
+    }
+  }
+  return NextResponse.json({ triggered });
+}
+

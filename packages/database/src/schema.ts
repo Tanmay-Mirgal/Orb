@@ -1,92 +1,337 @@
-import { pgTable, text, timestamp, uuid, varchar, integer, boolean } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  bigint,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
+import type { DeploymentConfig } from 'shared';
 
-export const users = pgTable("user", {
-					id: text("id").primaryKey(),
-					name: text('name').notNull(),
-					email: text('email').notNull().unique(),
-					emailVerified: boolean('emailVerified').notNull(),
-					image: text('image'),
-					createdAt: timestamp('createdAt', { mode: 'date' }).notNull(),
-					updatedAt: timestamp('updatedAt', { mode: 'date' }).notNull()
-				});
+// ---------------------------------------------------------------------------
+// Authentication (Better Auth). Table/column names are dictated by the library.
+// ---------------------------------------------------------------------------
+export const users = pgTable('user', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: boolean('emailVerified').notNull(),
+  image: text('image'),
+  createdAt: timestamp('createdAt', { mode: 'date' }).notNull(),
+  updatedAt: timestamp('updatedAt', { mode: 'date' }).notNull(),
+});
 
-export const sessions = pgTable("session", {
-					id: text("id").primaryKey(),
-					expiresAt: timestamp('expiresAt', { mode: 'date' }).notNull(),
-					token: text('token').notNull().unique(),
-					createdAt: timestamp('createdAt', { mode: 'date' }).notNull(),
-					updatedAt: timestamp('updatedAt', { mode: 'date' }).notNull(),
-					ipAddress: text('ipAddress'),
-					userAgent: text('userAgent'),
-					userId: text('userId').notNull().references(() => users.id)
-				});
+export const sessions = pgTable('session', {
+  id: text('id').primaryKey(),
+  expiresAt: timestamp('expiresAt', { mode: 'date' }).notNull(),
+  token: text('token').notNull().unique(),
+  createdAt: timestamp('createdAt', { mode: 'date' }).notNull(),
+  updatedAt: timestamp('updatedAt', { mode: 'date' }).notNull(),
+  ipAddress: text('ipAddress'),
+  userAgent: text('userAgent'),
+  userId: text('userId')
+    .notNull()
+    .references(() => users.id),
+});
 
-export const accounts = pgTable("account", {
-					id: text("id").primaryKey(),
-					accountId: text('accountId').notNull(),
-					providerId: text('providerId').notNull(),
-					userId: text('userId').notNull().references(() => users.id),
-					accessToken: text('accessToken'),
-					refreshToken: text('refreshToken'),
-					idToken: text('idToken'),
-					accessTokenExpiresAt: timestamp('accessTokenExpiresAt', { mode: 'date' }),
-					refreshTokenExpiresAt: timestamp('refreshTokenExpiresAt', { mode: 'date' }),
-					scope: text('scope'),
-					password: text('password'),
-					createdAt: timestamp('createdAt', { mode: 'date' }),
-					updatedAt: timestamp('updatedAt', { mode: 'date' })
-				});
+export const accounts = pgTable('account', {
+  id: text('id').primaryKey(),
+  accountId: text('accountId').notNull(),
+  providerId: text('providerId').notNull(),
+  userId: text('userId')
+    .notNull()
+    .references(() => users.id),
+  accessToken: text('accessToken'),
+  refreshToken: text('refreshToken'),
+  idToken: text('idToken'),
+  accessTokenExpiresAt: timestamp('accessTokenExpiresAt', { mode: 'date' }),
+  refreshTokenExpiresAt: timestamp('refreshTokenExpiresAt', { mode: 'date' }),
+  scope: text('scope'),
+  password: text('password'),
+  createdAt: timestamp('createdAt', { mode: 'date' }),
+  updatedAt: timestamp('updatedAt', { mode: 'date' }),
+});
 
-export const verifications = pgTable("verification", {
-					id: text("id").primaryKey(),
-					identifier: text('identifier').notNull(),
-					value: text('value').notNull(),
-					expiresAt: timestamp('expiresAt', { mode: 'date' }).notNull(),
-					createdAt: timestamp('createdAt', { mode: 'date' }),
-					updatedAt: timestamp('updatedAt', { mode: 'date' })
-				});
+export const verifications = pgTable('verification', {
+  id: text('id').primaryKey(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: timestamp('expiresAt', { mode: 'date' }).notNull(),
+  createdAt: timestamp('createdAt', { mode: 'date' }),
+  updatedAt: timestamp('updatedAt', { mode: 'date' }),
+});
 
-export const projects = pgTable('projects', {
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+export const organizations = pgTable('organizations', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
-  slug: varchar('slug', { length: 255 }).unique(),
-  userId: text('userId').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  framework: varchar('framework', { length: 255 }), 
-  buildCommand: varchar('build_command', { length: 255 }),
-  outputDirectory: varchar('output_directory', { length: 255 }),
-  rootDirectory: varchar('root_directory', { length: 255 }),
-  installCommand: varchar('install_command', { length: 255 }),
-});
-
-export const projectRepositories = pgTable('project_repositories', {
-  projectId: uuid('projectId').notNull().references(() => projects.id, { onDelete: 'cascade' }).primaryKey(),
-  githubRepositoryId: integer('github_repository_id').notNull(),
-  githubRepositoryName: varchar('github_repository_name', { length: 255 }).notNull(),
-  branch: varchar('branch', { length: 255 }).default('main').notNull(),
-});
-
-export const deployments = pgTable('deployments', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  projectId: uuid('projectId').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  status: varchar('status', { length: 50 }).notNull().default('QUEUED'), 
-  commitHash: varchar('commit_hash', { length: 255 }),
-  commitMessage: text('commit_message'),
+  slug: varchar('slug', { length: 64 }).notNull().unique(),
+  plan: varchar('plan', { length: 32 }).notNull().default('free'),
+  isPersonal: boolean('is_personal').notNull().default(false),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const domains = pgTable('domains', {
-  domain: varchar('domain', { length: 255 }).notNull().primaryKey(),
-  projectId: uuid('projectId').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  status: varchar('status', { length: 50 }).notNull().default('pending'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+export const memberships = pgTable(
+  'memberships',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: varchar('role', { length: 16 }).notNull().default('member'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.userId] }), index('memberships_user_idx').on(t.userId)],
+);
+
+export const apiTokens = pgTable(
+  'api_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    /** SHA-256 of the token; the token itself is shown once at creation. */
+    tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+    prefix: varchar('prefix', { length: 16 }).notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    expiresAt: timestamp('expires_at'),
+    revokedAt: timestamp('revoked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('api_tokens_user_idx').on(t.userId)],
+);
+
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    actorId: text('actor_id'),
+    actorType: varchar('actor_type', { length: 16 }).notNull().default('user'),
+    action: varchar('action', { length: 64 }).notNull(),
+    targetType: varchar('target_type', { length: 32 }),
+    targetId: varchar('target_id', { length: 255 }),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    ip: varchar('ip', { length: 64 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('audit_logs_org_created_idx').on(t.orgId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
+// Projects & deployments
+// ---------------------------------------------------------------------------
+export const projects = pgTable(
+  'projects',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: varchar('name', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }).unique(),
+    /** Creator. Ownership/permissions are decided by `orgId` + memberships. */
+    userId: text('userId')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** static | web_service | worker | cron */
+    type: varchar('type', { length: 32 }).notNull().default('static'),
+    framework: varchar('framework', { length: 255 }),
+    buildCommand: varchar('build_command', { length: 255 }),
+    outputDirectory: varchar('output_directory', { length: 255 }),
+    rootDirectory: varchar('root_directory', { length: 255 }),
+    installCommand: varchar('install_command', { length: 255 }),
+    startCommand: varchar('start_command', { length: 255 }),
+    dockerfilePath: varchar('dockerfile_path', { length: 255 }),
+    port: integer('port').notNull().default(3000),
+    healthCheckPath: varchar('health_check_path', { length: 255 }).notNull().default('/'),
+    instancePlan: varchar('instance_plan', { length: 32 }).notNull().default('free'),
+    instanceCount: integer('instance_count').notNull().default(1),
+    cronSchedule: varchar('cron_schedule', { length: 100 }),
+    autoDeploy: boolean('auto_deploy').notNull().default(true),
+    previewDeployments: boolean('preview_deployments').notNull().default(false),
+    /** Deployment that `<slug>.<base-domain>` and the project's custom domains currently serve. */
+    currentDeploymentId: uuid('current_deployment_id').references((): AnyPgColumn => deployments.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('projects_org_idx').on(t.orgId)],
+);
+
+export const projectRepositories = pgTable('project_repositories', {
+  projectId: uuid('projectId')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' })
+    .primaryKey(),
+  githubRepositoryId: integer('github_repository_id').notNull(),
+  githubRepositoryName: varchar('github_repository_name', { length: 255 }).notNull(),
+  /** Production branch. */
+  branch: varchar('branch', { length: 255 }).default('main').notNull(),
+  /** GitHub App installation used to clone private repositories (falls back to the owner's OAuth token). */
+  installationId: bigint('installation_id', { mode: 'number' }),
 });
 
-export const environmentVariables = pgTable('environment_variables', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  projectId: uuid('projectId').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  key: varchar('key', { length: 255 }).notNull(),
-  value: text('value').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+export const deployments = pgTable(
+  'deployments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('projectId')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** QUEUED | BUILDING | DEPLOYING | READY | FAILED | CANCELED */
+    status: varchar('status', { length: 50 }).notNull().default('QUEUED'),
+    environment: varchar('environment', { length: 16 }).notNull().default('production'),
+    trigger: varchar('trigger', { length: 16 }).notNull().default('manual'),
+    branch: varchar('branch', { length: 255 }),
+    commitHash: varchar('commit_hash', { length: 255 }),
+    commitMessage: text('commit_message'),
+    commitAuthor: varchar('commit_author', { length: 255 }),
+    /** Immutable URL label: `<slug>-<8 hex>.<base-domain>`. */
+    subdomain: varchar('subdomain', { length: 100 }).unique(),
+    config: jsonb('config').$type<DeploymentConfig>(),
+    /** Container image (web services / workers / cron). */
+    imageRef: varchar('image_ref', { length: 512 }),
+    /** Static sites: number of files in the published artifact. */
+    fileCount: integer('file_count'),
+    errorMessage: text('error_message'),
+    createdBy: text('created_by'),
+    buildStartedAt: timestamp('build_started_at'),
+    buildFinishedAt: timestamp('build_finished_at'),
+    readyAt: timestamp('ready_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('deployments_project_created_idx').on(t.projectId, t.createdAt),
+    index('deployments_status_idx').on(t.status),
+  ],
+);
+
+/** Running container replicas of a deployment (web services / workers). */
+export const instances = pgTable(
+  'instances',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    deploymentId: uuid('deployment_id')
+      .notNull()
+      .references(() => deployments.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    nodeId: varchar('node_id', { length: 128 }).notNull(),
+    containerId: varchar('container_id', { length: 128 }),
+    /** Address:port the edge proxies use to reach this instance. */
+    address: varchar('address', { length: 255 }),
+    hostPort: integer('host_port'),
+    /** STARTING | RUNNING | UNHEALTHY | STOPPED | FAILED | LOST */
+    status: varchar('status', { length: 16 }).notNull().default('STARTING'),
+    cpuMillis: integer('cpu_millis').notNull().default(0),
+    memoryMb: integer('memory_mb').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    stoppedAt: timestamp('stopped_at'),
+  },
+  (t) => [
+    index('instances_deployment_idx').on(t.deploymentId),
+    index('instances_node_status_idx').on(t.nodeId, t.status),
+    index('instances_project_idx').on(t.projectId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Domains & configuration
+// ---------------------------------------------------------------------------
+export const domains = pgTable(
+  'domains',
+  {
+    domain: varchar('domain', { length: 255 }).notNull().primaryKey(),
+    projectId: uuid('projectId')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** pending | verified | active | error */
+    status: varchar('status', { length: 50 }).notNull().default('pending'),
+    verificationToken: varchar('verification_token', { length: 64 }),
+    verifiedAt: timestamp('verified_at'),
+    lastCheckedAt: timestamp('last_checked_at'),
+    lastError: text('last_error'),
+    /** When set, the edge answers 308 to this domain (e.g. www -> apex). */
+    redirectTo: varchar('redirect_to', { length: 255 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('domains_project_idx').on(t.projectId), index('domains_status_idx').on(t.status)],
+);
+
+export const environmentVariables = pgTable(
+  'environment_variables',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('projectId')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    key: varchar('key', { length: 255 }).notNull(),
+    /** AES-256-GCM envelope (see core/crypto). Legacy rows may still be plaintext until `db:encrypt-legacy`. */
+    value: text('value').notNull(),
+    /** all | production | preview */
+    target: varchar('target', { length: 16 }).notNull().default('all'),
+    /** both | build | runtime */
+    scope: varchar('scope', { length: 16 }).notNull().default('both'),
+    /** Secret values are never returned by the API after creation. */
+    isSecret: boolean('is_secret').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('env_vars_project_key_target_idx').on(t.projectId, t.key, t.target)],
+);
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+export const usageHourly = pgTable(
+  'usage_hourly',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    bucket: timestamp('bucket').notNull(),
+    requests: bigint('requests', { mode: 'number' }).notNull().default(0),
+    bytesOut: bigint('bytes_out', { mode: 'number' }).notNull().default(0),
+    status2xx: bigint('status_2xx', { mode: 'number' }).notNull().default(0),
+    status3xx: bigint('status_3xx', { mode: 'number' }).notNull().default(0),
+    status4xx: bigint('status_4xx', { mode: 'number' }).notNull().default(0),
+    status5xx: bigint('status_5xx', { mode: 'number' }).notNull().default(0),
+    durationMsTotal: bigint('duration_ms_total', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.bucket] })],
+);
+
+export type User = typeof users.$inferSelect;
+export type Organization = typeof organizations.$inferSelect;
+export type Membership = typeof memberships.$inferSelect;
+export type Project = typeof projects.$inferSelect;
+export type ProjectRepository = typeof projectRepositories.$inferSelect;
+export type Deployment = typeof deployments.$inferSelect;
+export type Instance = typeof instances.$inferSelect;
+export type Domain = typeof domains.$inferSelect;
+export type EnvironmentVariable = typeof environmentVariables.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type ApiToken = typeof apiTokens.$inferSelect;

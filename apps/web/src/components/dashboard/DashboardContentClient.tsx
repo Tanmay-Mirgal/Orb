@@ -65,7 +65,7 @@ export function DashboardContentClient({ projectsData, userName }: { projectsDat
                   <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-full border border-border/50 bg-secondary/30 flex items-center justify-center shrink-0 overflow-hidden">
                       <img 
-                        src={`https://icons.duckduckgo.com/ip3/${data.project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}.ico`} 
+                        src={`https://icons.duckduckgo.com/ip3/${data.project.slug}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'localhost'}.ico`} 
                         alt=""
                         className="h-5 w-5 object-contain"
                         onError={(e) => {
@@ -106,7 +106,7 @@ export function DashboardContentClient({ projectsData, userName }: { projectsDat
                       <Link href={`/dashboard/projects/${data.project.slug || data.project.name.toLowerCase()}`}>Manage</Link>
                     </Button>
                     <Button variant="outline" size="sm" className="h-8 bg-transparent text-muted-foreground hover:text-foreground border-border/50" asChild>
-                      <a href={`https://${data.project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                      <a href={`https://${data.project.slug}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'localhost'}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
                         Visit <ArrowUpRight className="h-3.5 w-3.5" />
                       </a>
                     </Button>

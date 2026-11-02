@@ -1,0 +1,152 @@
+# Single-host production stack:  docker compose -f deploy/docker-compose.prod.yml --env-file .env up -d --build
+#
+# Everything runs on one machine here, which is the simplest way to start. To scale out, run more of
+# `web` / `proxy` / `worker` behind a load balancer and add `runner` agents on additional machines
+# (each needs REGISTRY_URL + a shared Postgres/Redis/S3). See README → Scaling.
+name: orb
+
+x-env: &env
+  env_file: ../.env
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: orb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: orb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orb -d orb"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    volumes:
+      - registry_data:/var/lib/registry
+    ports:
+      - "127.0.0.1:5000:5000"
+
+  migrate:
+    build: { context: .., target: tools }
+    <<: *env
+    environment:
+      DATABASE_URL: postgresql://orb:${POSTGRES_PASSWORD}@postgres:5432/orb
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  web:
+    build:
+      context: ..
+      target: web
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_BASE_DOMAIN: ${NEXT_PUBLIC_BASE_DOMAIN}
+    <<: *env
+    environment:
+      DATABASE_URL: postgresql://orb:${POSTGRES_PASSWORD}@postgres:5432/orb
+      REDIS_HOST: redis
+      STORAGE_FS_ROOT: /var/orb/storage
+    volumes:
+      - storage:/var/orb/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  proxy:
+    build: { context: .., target: proxy }
+    <<: *env
+    environment:
+      DATABASE_URL: postgresql://orb:${POSTGRES_PASSWORD}@postgres:5432/orb
+      REDIS_HOST: redis
+      STORAGE_FS_ROOT: /var/orb/storage
+    volumes:
+      - storage:/var/orb/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: { context: .., target: worker }
+    <<: *env
+    environment:
+      DATABASE_URL: postgresql://orb:${POSTGRES_PASSWORD}@postgres:5432/orb
+      REDIS_HOST: redis
+      REGISTRY_URL: ${REGISTRY_URL:-}
+      WORKER_WORKDIR: /var/orb/builds
+      STORAGE_FS_ROOT: /var/orb/storage
+    volumes:
+      - storage:/var/orb/storage
+      # Docker-outside-of-Docker: the worker builds images with the host daemon. This socket is root-equivalent
+      # on the host — run workers on dedicated build machines in a multi-tenant production setup.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - builds:/var/orb/builds
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  runner:
+    build: { context: .., target: runner }
+    <<: *env
+    environment:
+      REDIS_HOST: redis
+      # Must stay stable across container re-creations: instances are tied to this id.
+      NODE_ID: ${NODE_ID:-node-1}
+      CONTROL_PLANE_URL: http://web:3000
+      # Containers publish their ports on the docker0 bridge address: reachable by the proxy on this host,
+      # not from the internet.
+      RUNNER_BIND_IP: 172.17.0.1
+      RUNNER_ADDRESS: 172.17.0.1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis: { condition: service_healthy }
+
+  caddy:
+    build: ./caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+      DASHBOARD_HOST: ${DASHBOARD_HOST}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      WEB_UPSTREAM: web:3000
+      PROXY_UPSTREAM: proxy:8000
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - proxy
+
+volumes:
+  postgres_data:
+  redis_data:
+  registry_data:
+  builds:
+  # Only used when STORAGE_DRIVER=fs (single host). Use S3 for anything serious.
+  storage:
+  caddy_data:
+  caddy_config:

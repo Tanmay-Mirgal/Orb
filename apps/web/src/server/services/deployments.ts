@@ -1,0 +1,170 @@
+import { randomUUID } from 'node:crypto';
+import { enqueueBuild, enqueueRelease, publishRouteInvalidation } from 'core';
+import {
+  and,
+  count,
+  deployments,
+  desc,
+  eq,
+  inArray,
+  instances,
+  projects,
+  type Deployment,
+  type Project,
+  type ProjectRepository,
+} from 'database';
+import {
+  DeploymentStatus,
+  deploymentSubdomain,
+  getOrgPlan,
+  IN_FLIGHT_DEPLOYMENT_STATUSES,
+  type DeploymentConfig,
+  type DeploymentEnvironment,
+  type DeploymentTrigger,
+  type ProjectType,
+} from 'shared';
+import { db } from '@/lib/db';
+import { ApiError, badRequest, conflict, planLimit } from '../api';
+import { getBuildQueue, getRedis, getReleaseQueue } from '../infra';
+
+/** Snapshot of the project's current build/runtime settings, frozen into the deployment. */
+export function snapshotConfig(project: Project): DeploymentConfig {
+  return {
+    type: project.type as ProjectType,
+    framework: project.framework,
+    rootDirectory: project.rootDirectory ?? '',
+    installCommand: project.installCommand,
+    buildCommand: project.buildCommand,
+    startCommand: project.startCommand,
+    outputDirectory: project.outputDirectory,
+    dockerfilePath: project.dockerfilePath,
+    port: project.port,
+    healthCheckPath: project.healthCheckPath,
+    instancePlan: project.instancePlan,
+    instanceCount: project.instanceCount,
+    cronSchedule: project.cronSchedule,
+  };
+}
+
+export interface CreateDeploymentInput {
+  project: Project;
+  repository: ProjectRepository;
+  orgPlan: string;
+  environment: DeploymentEnvironment;
+  trigger: DeploymentTrigger;
+  branch?: string;
+  commitSha?: string | null;
+  commitMessage?: string | null;
+  commitAuthor?: string | null;
+  config?: DeploymentConfig;
+  createdBy?: string | null;
+}
+
+const MAX_QUEUED_PER_PROJECT = 10;
+
+/**
+ * Creates the deployment row (with its immutable URL and config snapshot) and queues the build.
+ * The job carries only the deployment id: the worker reads everything else (incl. secrets) from Postgres.
+ */
+export async function createDeployment(input: CreateDeploymentInput): Promise<Deployment> {
+  const { project, repository } = input;
+  const plan = getOrgPlan(input.orgPlan);
+
+  if (input.environment === 'preview' && !plan.previewDeployments) {
+    throw planLimit('Preview deployments are not included in your plan');
+  }
+  if (!project.slug) throw badRequest('Project has no slug');
+
+  const [pending] = await db
+    .select({ n: count() })
+    .from(deployments)
+    .where(and(eq(deployments.projectId, project.id), inArray(deployments.status, [...IN_FLIGHT_DEPLOYMENT_STATUSES])));
+  if ((pending?.n ?? 0) >= MAX_QUEUED_PER_PROJECT) {
+    throw new ApiError(429, 'Too many deployments are already queued for this project', 'queue_full');
+  }
+
+  const id = randomUUID();
+  const [deployment] = await db
+    .insert(deployments)
+    .values({
+      id,
+      projectId: project.id,
+      status: DeploymentStatus.QUEUED,
+      environment: input.environment,
+      trigger: input.trigger,
+      branch: input.branch ?? repository.branch,
+      commitHash: input.commitSha ?? null,
+      commitMessage: input.commitMessage?.slice(0, 1000) ?? null,
+      commitAuthor: input.commitAuthor?.slice(0, 255) ?? null,
+      subdomain: deploymentSubdomain(project.slug, id),
+      config: input.config ?? snapshotConfig(project),
+      createdBy: input.createdBy ?? null,
+    })
+    .returning();
+
+  try {
+    await enqueueBuild(getBuildQueue(), id);
+  } catch (err) {
+    await db
+      .update(deployments)
+      .set({ status: DeploymentStatus.FAILED, errorMessage: 'Could not enqueue build', updatedAt: new Date() })
+      .where(eq(deployments.id, id));
+    throw err;
+  }
+  return deployment!;
+}
+
+export async function cancelDeployment(deployment: Deployment): Promise<Deployment> {
+  if (!IN_FLIGHT_DEPLOYMENT_STATUSES.includes(deployment.status as DeploymentStatus)) {
+    throw conflict(`Deployment is already ${deployment.status.toLowerCase()}`);
+  }
+  // Conditional update: the worker may finish between our read and write.
+  const [updated] = await db
+    .update(deployments)
+    .set({ status: DeploymentStatus.CANCELED, errorMessage: 'Canceled by user', updatedAt: new Date() })
+    .where(and(eq(deployments.id, deployment.id), inArray(deployments.status, [...IN_FLIGHT_DEPLOYMENT_STATUSES])))
+    .returning();
+  if (!updated) throw conflict('Deployment finished before it could be canceled');
+  // A job that has not started yet can simply be dropped; a running build notices the status change.
+  try {
+    const job = await getBuildQueue().getJob(`build-${deployment.id}`);
+    if (job && (await job.isWaiting())) await job.remove();
+  } catch {
+    /* worker will skip canceled deployments anyway */
+  }
+  return updated;
+}
+
+/**
+ * Makes a READY deployment the live one (instant rollback when it is an older deployment).
+ * Static sites flip a pointer; container deployments are (re)started by the scheduler first.
+ */
+export async function promoteDeployment(project: Project, deployment: Deployment): Promise<{ queued: boolean }> {
+  if (deployment.projectId !== project.id) throw badRequest('Deployment does not belong to this project');
+  if (deployment.status !== DeploymentStatus.READY) throw conflict('Only deployments that are ready can be promoted');
+
+  const type = (deployment.config?.type ?? project.type) as ProjectType;
+  if (type === 'static') {
+    await db.update(projects).set({ currentDeploymentId: deployment.id, updatedAt: new Date() }).where(eq(projects.id, project.id));
+    await publishRouteInvalidation(getRedis(), { projectId: project.id });
+    return { queued: false };
+  }
+  await enqueueRelease(getReleaseQueue(), deployment.id, true);
+  return { queued: true };
+}
+
+export async function listDeployments(projectId: string, limit = 30): Promise<Deployment[]> {
+  return db
+    .select()
+    .from(deployments)
+    .where(eq(deployments.projectId, projectId))
+    .orderBy(desc(deployments.createdAt))
+    .limit(Math.min(limit, 100));
+}
+
+export async function runningInstances(deploymentId: string) {
+  return db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.deploymentId, deploymentId), inArray(instances.status, ['STARTING', 'RUNNING', 'UNHEALTHY'])));
+}

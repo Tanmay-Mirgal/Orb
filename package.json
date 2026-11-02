@@ -1,17 +1,33 @@
 {
   "name": "orb",
-  "version": "1.0.0",
-  "description": "Orb Platform Monorepo",
+  "version": "2.0.0",
+  "description": "Orb — multi-tenant application deployment platform (static sites, web services, workers, cron jobs)",
   "private": true,
+  "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "dev": "concurrently -k -n web,worker,proxy,runner -c blue,green,magenta,yellow \"npm run dev -w web\" \"npm run dev -w worker\" \"npm run dev -w proxy\" \"npm run dev -w runner\"",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "db:generate": "npm run db:generate -w database",
+    "db:migrate": "npm run migrate -w database",
+    "db:encrypt-legacy": "npm run encrypt-legacy -w database",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
 }

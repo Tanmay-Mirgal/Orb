@@ -17,7 +17,7 @@ export function DomainsContentClient() {
   const [domains, setDomains] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/domains')
+    fetch("/api/v1/domains")
       .then(res => res.json())
       .then(data => {
         if (data.domains) {

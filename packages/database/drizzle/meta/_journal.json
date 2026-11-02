@@ -8,6 +8,13 @@
       "when": 1783611698315,
       "tag": "0000_easy_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793578066458,
+      "tag": "0001_upgrade_v2",
+      "breakpoints": true
     }
   ]
 }

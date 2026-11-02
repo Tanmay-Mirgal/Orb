@@ -1,19 +1,52 @@
+# Edge TLS termination for Orb (Caddy v2).
+#
+#   {$DASHBOARD_HOST}      the dashboard / API           (e.g. orb.example.com)
+#   *.{$BASE_DOMAIN}       every deployed project        (e.g. *.orb.example.com) — ONE wildcard certificate via DNS-01
+#   https://               customers' custom domains     — certificates issued on demand, but only for domains
+#                          that the control plane has verified (see `ask` below)
+#
+# The wildcard block needs a Caddy build with your DNS provider's plugin (see deploy/caddy/Dockerfile), because
+# Let's Encrypt limits per-hostname certificates to ~50/week — far too low for a platform that creates one
+# hostname per project and per deployment.
 {
-    email tanmay@tanmaymirgal.dev
-    on_demand_tls {
-        ask http://localhost:3000/api/caddy/ask
-    }
+	email {$ACME_EMAIL}
+	on_demand_tls {
+		ask http://{$WEB_UPSTREAM:localhost:3000}/api/internal/caddy/ask
+	}
 }
 
-# The main dashboard
-orb.tanmaymirgal.dev {
-    reverse_proxy localhost:3000
+(hardening) {
+	encode zstd gzip
+	header -Server
 }
 
-# Deployed Projects (Dynamic subdomains - individual certs via HTTP-01)
-:443 {
-    tls {
-        on_demand
-    }
-    reverse_proxy localhost:8000
+{$DASHBOARD_HOST} {
+	import hardening
+	request_body {
+		max_size 10MB
+	}
+	reverse_proxy {$WEB_UPSTREAM:localhost:3000}
+}
+
+*.{$BASE_DOMAIN} {
+	import hardening
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	reverse_proxy {$PROXY_UPSTREAM:localhost:8000} {
+		health_uri /__orb/health
+		health_interval 10s
+	}
+}
+
+# Custom domains (and anything else that reaches port 443): on-demand certificates, gated by `ask`.
+https:// {
+	import hardening
+	tls {
+		on_demand
+	}
+	reverse_proxy {$PROXY_UPSTREAM:localhost:8000} {
+		health_uri /__orb/health
+		health_interval 10s
+	}
 }

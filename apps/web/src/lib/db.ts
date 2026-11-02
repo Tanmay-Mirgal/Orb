@@ -1,11 +1,10 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { createDb } from 'database';
 
-const globalForDb = globalThis as unknown as {
-  conn: postgres.Sql | undefined;
-};
+// Reuse one pool across hot reloads in development and across route modules in production.
+const globalForDb = globalThis as unknown as { __orbDb?: ReturnType<typeof createDb> };
 
-const sql = globalForDb.conn ?? postgres(process.env.DATABASE_URL || 'postgresql://orb:password@localhost:5432/orb');
-if (process.env.NODE_ENV !== 'production') globalForDb.conn = sql;
+const instance = globalForDb.__orbDb ?? createDb();
+if (process.env.NODE_ENV !== 'production') globalForDb.__orbDb = instance;
 
-export const db = drizzle(sql);
+export const db = instance.db;
+export const pg = instance.sql;

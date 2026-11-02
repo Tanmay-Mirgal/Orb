@@ -1,41 +1,94 @@
 import { Worker } from 'bullmq';
-import { processDeploymentJob } from './processor';
-import * as dotenv from 'dotenv';
-import Redis from 'ioredis';
-import * as path from 'path';
+import { bullConnection, createMetrics, loadEnv, startOpsServer } from 'core';
+import { sql } from 'database';
+import { QUEUES } from 'shared';
+import { runBuildJob } from './build/pipeline';
+import { runProcess } from './build/docker-login';
+import { createContext } from './context';
+import { runMaintenanceJob, SCHEDULERS } from './jobs/maintenance';
+import { runReleaseJob } from './orchestrator/release';
 
-// Load .env from monorepo root (apps/worker has no local .env)
-dotenv.config({ path: path.join(__dirname, '../../../.env') });
-dotenv.config(); // fallback: also try local .env if it exists
+loadEnv();
 
+async function main() {
+  const ctx = createContext();
+  const { logger, config, redis } = ctx;
+  logger.info('Orb worker starting');
 
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null
-});
+  await ctx.storage.ensureReady();
+  if (config.registry && config.registryUsername && config.registryPassword) {
+    await runProcess('docker', ['login', config.registry.split('/')[0]!, '-u', config.registryUsername, '--password-stdin'], config.registryPassword);
+    logger.info({ registry: config.registry }, 'logged in to registry');
+  }
 
-console.log('🚀 Orb Worker initializing...');
+  const connection = bullConnection(redis);
+  const metrics = createMetrics('worker');
+  const jobsTotal = new metrics.client.Counter({ name: 'orb_worker_jobs_total', help: 'Jobs processed', labelNames: ['queue', 'result'], registers: [metrics.registry] });
 
-const worker = new Worker('deployments', processDeploymentJob, {
-  connection: connection as any,
-  concurrency: 2, // process 2 deployments concurrently
-});
+  const builds = new Worker(QUEUES.build, (job, token) => runBuildJob(ctx, job, token), {
+    connection,
+    concurrency: config.buildConcurrency,
+    lockDuration: 60_000,
+  });
+  const releases = new Worker(QUEUES.release, (job) => runReleaseJob(ctx, job), {
+    connection,
+    concurrency: config.releaseConcurrency,
+    lockDuration: 60_000,
+  });
+  const maintenance = new Worker(QUEUES.maintenance, (job) => runMaintenanceJob(ctx, job), { connection, concurrency: 4 });
 
-worker.on('completed', (job) => {
-  console.log(`✅ Job ${job.id} has completed successfully`);
-});
+  for (const [name, worker] of [['build', builds], ['release', releases], ['maintenance', maintenance]] as const) {
+    worker.on('completed', () => jobsTotal.inc({ queue: name, result: 'completed' }));
+    worker.on('failed', (job, err) => {
+      jobsTotal.inc({ queue: name, result: 'failed' });
+      logger.warn({ queue: name, job: job?.id, err: err.message }, 'job failed');
+    });
+    worker.on('error', (err) => logger.error({ queue: name, err: err.message }, 'worker error'));
+  }
 
-worker.on('failed', (job, err) => {
-  console.log(`❌ Job ${job?.id} has failed: ${err.message}`);
-});
+  // Repeatable platform jobs. upsertJobScheduler is idempotent, so every worker instance can call it.
+  for (const [name, every] of Object.entries(SCHEDULERS)) {
+    await ctx.maintenanceQueue.upsertJobScheduler(name, { every }, { name, data: {} });
+  }
 
-worker.on('error', (err) => {
-  console.error(err);
-});
+  const ops = startOpsServer({
+    port: config.opsPort,
+    metrics,
+    logger,
+    checks: {
+      redis: async () => {
+        await redis.ping();
+      },
+      postgres: async () => {
+        await ctx.db.execute(sql`select 1`);
+      },
+      storage: () => ctx.storage.ping(),
+    },
+  });
 
-console.log('🎧 Worker listening on "deployments" queue...');
+  logger.info({ buildConcurrency: config.buildConcurrency }, 'Orb worker ready');
 
-process.on('SIGTERM', async () => {
-  console.log('Shutting down worker...');
-  await worker.close();
-  process.exit(0);
+  let stopping = false;
+  const shutdown = async (signal: string) => {
+    if (stopping) return;
+    stopping = true;
+    logger.info({ signal }, 'shutting down: waiting for running jobs');
+    ops.close();
+    // Let in-flight builds finish (up to 60 s); unfinished ones are picked up again by BullMQ's stalled-job recovery.
+    await Promise.race([
+      Promise.all([builds.close(), releases.close(), maintenance.close()]),
+      new Promise((resolve) => setTimeout(resolve, 60_000)),
+    ]);
+    await ctx.runners.close();
+    await ctx.closeDb();
+    redis.disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+}
+
+main().catch((err) => {
+  console.error(JSON.stringify({ level: 'fatal', msg: 'worker failed to start', err: err instanceof Error ? err.stack : String(err) }));
+  process.exit(1);
 });

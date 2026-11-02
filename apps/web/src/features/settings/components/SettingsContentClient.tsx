@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { User, LogOut } from "lucide-react";
 import { useSession, signOut } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
+import { TokensSection } from "./TokensSection";
 
 export function SettingsContentClient() {
   const { data: session } = useSession();
@@ -99,6 +100,7 @@ export function SettingsContentClient() {
                   </div>
                 </div>
               </div>
+              <TokensSection />
             </div>
           </motion.div>
         </div>

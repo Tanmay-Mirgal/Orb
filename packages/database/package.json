@@ -1,24 +1,23 @@
 {
   "name": "database",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "private": true,
   "main": "src/index.ts",
+  "types": "src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "typecheck": "tsc --noEmit -p .",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "migrate": "tsx src/migrate-cli.ts",
+    "encrypt-legacy": "tsx src/encrypt-legacy-cli.ts"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "dotenv": "^17.4.2",
+    "core": "*",
+    "shared": "*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "drizzle-kit": "^0.31.10",
-    "typescript": "^7.0.2"
+    "@electric-sql/pglite": "^0.3.0",
+    "drizzle-kit": "^0.31.10"
   }
 }

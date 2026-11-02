@@ -32,10 +32,10 @@ export function PremiumProjectCard({ project, repository, delay = 0 }: PremiumPr
   const [imageError, setImageError] = useState(false);
   const isProd = true;
   const isGithubConnected = !!repository?.githubRepositoryName;
-  const projectUrl = `https://${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}`;
+  const projectUrl = `${(process.env.NEXT_PUBLIC_BASE_DOMAIN || 'localhost') === 'localhost' ? 'http' : 'https'}://${project.slug}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'localhost'}`;
   
   // Using DuckDuckGo's favicon service as it's more reliable and fails properly when no favicon exists
-  const faviconUrl = `https://icons.duckduckgo.com/ip3/${project.name}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'orb.dev'}.ico`;
+  const faviconUrl = `https://icons.duckduckgo.com/ip3/${project.slug}.${process.env.NEXT_PUBLIC_BASE_DOMAIN || 'localhost'}.ico`;
 
   const renderFallbackIcon = () => {
     const fw = (project.framework || "").toLowerCase();

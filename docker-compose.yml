@@ -1,42 +1,62 @@
-version: '3.8'
+# Local development infrastructure:  docker compose up -d
+# The apps themselves run on your machine with `npm run dev`.
+# The production stack (all services containerised) lives in deploy/docker-compose.prod.yml.
+name: orb-dev
 
 services:
   postgres:
-    image: postgres:15-alpine
-    container_name: orb-postgres
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: orb
       POSTGRES_PASSWORD: password
       POSTGRES_DB: orb
     ports:
-      - "5432:5432"
-    command: postgres -c shared_buffers=64MB -c max_connections=30
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orb -d orb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: orb-redis
+    # noeviction: queues must never lose jobs under memory pressure. AOF: survive restarts.
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
-    command: redis-server --maxmemory-policy noeviction
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  minio:
-    image: minio/minio:latest
-    container_name: orb-minio
-    environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password123
+  # Image registry for web-service / worker / cron images (needed once you run >1 runner node).
+  registry:
+    image: registry:2
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    command: server /data --console-address ":9001"
+      - "127.0.0.1:5000:5000"
     volumes:
-      - minio_data:/data
+      - registry_data:/var/lib/registry
+    profiles: ["registry"]
+
+  # Optional S3-compatible object store (replaces MinIO). The default dev setup uses STORAGE_DRIVER=fs.
+  # Start with:  docker compose --profile s3 up -d   then set STORAGE_DRIVER=s3, S3_ENDPOINT=http://localhost:8333,
+  # S3_BUCKET=orb, S3_FORCE_PATH_STYLE=true  (any access key works in this dev setup).
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-s3", "-dir=/data"]
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - seaweed_data:/data
+    profiles: ["s3"]
 
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
+  registry_data:
+  seaweed_data:

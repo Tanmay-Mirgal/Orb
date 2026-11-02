@@ -4,11 +4,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   Activity, Box, CreditCard, Database, Globe, 
-  LayoutDashboard, Plus, Search, Settings, Webhook, 
+  LayoutDashboard, Plus, Search, Settings, Webhook, Users,
   PanelLeftClose, PanelLeftOpen, Bell
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 
@@ -28,18 +28,36 @@ const RESOURCES_NAV: NavItem[] = [
 ];
 
 const ACCOUNT_NAV: NavItem[] = [
+  { name: "Team", href: "/dashboard/team", icon: Users },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
+export interface TeamOption {
+  id: string;
+  name: string;
+  role: string;
+}
+
 export function SidebarLayout({ 
   children, 
-  userProfile 
+  userProfile,
+  teams = [],
+  activeTeamId,
 }: { 
   children: React.ReactNode;
   userProfile: React.ReactNode;
+  teams?: TeamOption[];
+  activeTeamId?: string;
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const switchTeam = (id: string) => {
+    document.cookie = `orb_org=${id}; path=/; max-age=31536000; samesite=lax`;
+    router.push("/dashboard");
+    router.refresh();
+  };
 
   const NavLink = ({ item }: { item: NavItem }) => {
     const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
@@ -110,6 +128,22 @@ export function SidebarLayout({
           </Link>
         </div>
         
+        {/* Team switcher */}
+        {!isCollapsed && teams.length > 0 && (
+          <div className="px-3 pt-3">
+            <select
+              value={activeTeamId}
+              onChange={(e) => switchTeam(e.target.value)}
+              className="w-full h-8 rounded-md bg-white/5 border border-white/10 text-[13px] px-2 text-white"
+              aria-label="Switch team"
+            >
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Nav Links */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 px-3 custom-scrollbar">
           <NavSection title="General" items={GENERAL_NAV} />

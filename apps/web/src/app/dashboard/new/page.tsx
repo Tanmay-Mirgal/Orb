@@ -15,6 +15,7 @@ type Repo = {
   full_name: string;
   private: boolean;
   language: string;
+  default_branch: string;
   updated_at: string;
 };
 
@@ -25,15 +26,21 @@ export default function NewProjectPage() {
   const [search, setSearch] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
   const [projectName, setProjectName] = useState("");
-  const [projectType, setProjectType] = useState<"static" | "web" | null>(null);
+  const [projectType, setProjectType] = useState<"static" | "web_service" | "worker" | null>(null);
   
   // Form State
   const [isDeploying, setIsDeploying] = useState(false);
-  const [framework, setFramework] = useState("Next.js");
+  const [framework, setFramework] = useState("");
+  const [startCmd, setStartCmd] = useState("");
+  const [port, setPort] = useState(3000);
+  const [instancePlan, setInstancePlan] = useState("free");
+  const [healthPath, setHealthPath] = useState("/");
+  const [branch, setBranch] = useState("main");
+  const [error, setError] = useState<string | null>(null);
   const [rootDir, setRootDir] = useState("./");
   const [buildCmd, setBuildCmd] = useState("npm run build");
   const [installCmd, setInstallCmd] = useState("npm install");
-  const [outputDir, setOutputDir] = useState(".next");
+  const [outputDir, setOutputDir] = useState("dist");
   const [envVars, setEnvVars] = useState([{ key: "", value: "" }]);
   const [showEnvVars, setShowEnvVars] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -44,7 +51,7 @@ export default function NewProjectPage() {
     if (!projectType) return;
     
     setLoading(true);
-    fetch("/api/github/repos")
+    fetch("/api/v1/github/repos")
       .then(res => res.json())
       .then(data => {
         if (data.repos) {
@@ -58,23 +65,24 @@ export default function NewProjectPage() {
       });
   }, [projectType]);
 
-  // Auto-detect framework
+  // Auto-detect framework (same detector the build worker uses)
   const [isDetecting, setIsDetecting] = useState(false);
   useEffect(() => {
     if (!selectedRepo) return;
+    setBranch(selectedRepo.default_branch || "main");
 
-    const detectFramework = async () => {
+    const detect = async () => {
       setIsDetecting(true);
       try {
-        const res = await fetch(`/api/github/detect-framework?repo=${encodeURIComponent(selectedRepo.full_name)}&rootDir=${encodeURIComponent(rootDir)}`);
+        const res = await fetch(`/api/v1/github/detect?repo=${encodeURIComponent(selectedRepo.full_name)}&branch=${encodeURIComponent(selectedRepo.default_branch || "main")}&rootDir=${encodeURIComponent(rootDir)}`);
         if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setFramework(data.framework);
-            setBuildCmd(data.buildCommand);
-            setOutputDir(data.outputDirectory);
-            setInstallCmd(data.installCommand);
-          }
+          const { detection } = await res.json();
+          setFramework(detection.frameworkName);
+          setBuildCmd(detection.buildCommand);
+          setOutputDir(detection.outputDirectory);
+          setInstallCmd(detection.installCommand);
+          setStartCmd(detection.startCommand);
+          setPort(detection.port);
         }
       } catch (err) {
         console.error("Failed to detect framework:", err);
@@ -83,7 +91,7 @@ export default function NewProjectPage() {
       }
     };
 
-    const timeout = setTimeout(detectFramework, 500);
+    const timeout = setTimeout(detect, 500);
     return () => clearTimeout(timeout);
   }, [selectedRepo, rootDir]);
 
@@ -92,60 +100,38 @@ export default function NewProjectPage() {
   const handleDeploy = async () => {
     if (!selectedRepo) return;
     setIsDeploying(true);
-    
-    const validEnvVars = envVars.reduce((acc, curr) => {
-      if (curr.key.trim() && curr.value.trim()) {
-        acc[curr.key.trim()] = curr.value.trim();
-      }
-      return acc;
-    }, {} as Record<string, string>);
+    setError(null);
+
+    const envPayload = envVars
+      .filter((v) => v.key.trim() && v.value.trim())
+      .map((v) => ({ key: v.key.trim(), value: v.value.trim(), target: "all", scope: "both", isSecret: true }));
 
     try {
-      // 1. Create Project
-      const projectRes = await fetch("/api/projects", {
+      const res = await fetch("/api/v1/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: projectName,
-          githubRepositoryName: selectedRepo.full_name,
-          githubRepositoryId: selectedRepo.id,
-          branch: "main",
-          framework: framework,
-          buildCommand: buildCmd,
-          outputDirectory: outputDir,
-          rootDirectory: rootDir,
+          type: projectType,
+          repository: { fullName: selectedRepo.full_name, id: selectedRepo.id, branch },
+          framework,
+          rootDirectory: rootDir === "./" ? "" : rootDir,
           installCommand: installCmd,
-        })
-      });
-      const projectData = await projectRes.json();
-      
-      if (!projectData.success) {
-        throw new Error(projectData.error || "Failed to create project");
-      }
-
-      // 2. Trigger Deployment via API
-      const res = await fetch("/api/deployments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: projectData.project.id,
-          githubRepositoryName: selectedRepo.full_name,
-          branch: "main",
           buildCommand: buildCmd,
-          outputDirectory: outputDir,
-          rootDirectory: rootDir,
-          installCommand: installCmd,
-          envVars: validEnvVars,
-        })
+          startCommand: projectType === "static" ? undefined : startCmd || undefined,
+          outputDirectory: projectType === "static" ? outputDir : undefined,
+          port: projectType === "web_service" ? port : undefined,
+          healthCheckPath: projectType === "web_service" ? healthPath : undefined,
+          instancePlan,
+          envVars: envPayload,
+          deploy: true,
+        }),
       });
-      
       const data = await res.json();
-      if (data.success) {
-        const slug = projectData.project.slug;
-        router.push(`/dashboard/projects/${slug}`);
-      }
-    } catch (error) {
-      console.error(error);
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to create project");
+      router.push(`/dashboard/projects/${data.project.slug}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
       setIsDeploying(false);
     }
   };
@@ -237,7 +223,7 @@ export default function NewProjectPage() {
             
             <div 
               className="flex items-start gap-4 p-6 rounded-2xl border border-zinc-800 bg-[#0c0c0c] hover:bg-zinc-900 hover:border-zinc-700 cursor-pointer transition-all group"
-              onClick={() => setProjectType("web")}
+              onClick={() => setProjectType("web_service")}
             >
               <div className="h-12 w-12 rounded-xl bg-zinc-800/50 border border-zinc-700/50 flex items-center justify-center shrink-0 group-hover:bg-zinc-800 transition-colors">
                 <Box className="h-6 w-6 text-zinc-300" strokeWidth={1.5} />
@@ -360,41 +346,12 @@ export default function NewProjectPage() {
                       <label className="text-[13px] font-semibold text-zinc-300">Framework Preset</label>
                       {isDetecting && <span className="text-[11px] text-indigo-400 font-medium animate-pulse flex items-center gap-1.5"><div className="h-1.5 w-1.5 rounded-full bg-indigo-500" /> Auto-detecting...</span>}
                     </div>
-                    <div className="relative">
-                      <select 
-                        className="w-full h-11 bg-zinc-900 border border-zinc-700 rounded-xl px-4 text-[14px] text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all appearance-none cursor-pointer"
-                        value={framework} 
-                        onChange={e => {
-                          const val = e.target.value;
-                          setFramework(val);
-                          if (val === "Next.js") {
-                            setBuildCmd("npm run build");
-                            setOutputDir(".next/standalone");
-                            setInstallCmd("npm install");
-                          } else if (val === "React.js") {
-                            setBuildCmd("npm run build");
-                            setOutputDir("dist");
-                            setInstallCmd("npm install");
-                          } else if (val === "Node.js") {
-                            setBuildCmd("");
-                            setOutputDir(".");
-                            setInstallCmd("npm install");
-                          } else if (val === "Flask") {
-                            setBuildCmd("");
-                            setOutputDir(".");
-                            setInstallCmd("pip install -r requirements.txt");
-                          }
-                        }}
-                      >
-                        <option value="Next.js">Next.js</option>
-                        <option value="React.js">React.js</option>
-                        <option value="Node.js">Node.js</option>
-                        <option value="Flask">Flask</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-zinc-500">
-                        ▼
-                      </div>
-                    </div>
+                    <Input
+                      value={framework}
+                      onChange={e => setFramework(e.target.value)}
+                      placeholder="Detected automatically"
+                      className="h-11 bg-zinc-900 border-zinc-700 focus-visible:ring-1 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50 rounded-xl text-[14px]"
+                    />
                   </div>
                   
                   <div className="space-y-2.5">
@@ -419,6 +376,7 @@ export default function NewProjectPage() {
                           className="h-10 bg-[#050505] border-zinc-800 focus-visible:ring-1 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50 rounded-lg font-mono text-[13px] shadow-inner"
                         />
                       </div>
+                      {projectType === "static" && (
                       <div className="space-y-2">
                         <label className="text-[12.5px] font-medium text-zinc-400">Output Directory</label>
                         <Input 
@@ -428,6 +386,37 @@ export default function NewProjectPage() {
                           className="h-10 bg-[#050505] border-zinc-800 focus-visible:ring-1 focus-visible:ring-indigo-500/50 focus-visible:border-indigo-500/50 rounded-lg font-mono text-[13px] shadow-inner"
                         />
                       </div>
+                      )}
+                      {projectType !== "static" && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-[12.5px] font-medium text-zinc-400">Start Command</label>
+                            <Input value={startCmd} onChange={e => setStartCmd(e.target.value)} placeholder="npm run start" className="h-10 bg-[#050505] border-zinc-800 rounded-lg font-mono text-[13px] shadow-inner" />
+                          </div>
+                          {projectType === "web_service" && (
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <label className="text-[12.5px] font-medium text-zinc-400">Port</label>
+                                <Input type="number" value={port} onChange={e => setPort(Number(e.target.value))} className="h-10 bg-[#050505] border-zinc-800 rounded-lg font-mono text-[13px] shadow-inner" />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[12.5px] font-medium text-zinc-400">Health check path</label>
+                                <Input value={healthPath} onChange={e => setHealthPath(e.target.value)} placeholder="/" className="h-10 bg-[#050505] border-zinc-800 rounded-lg font-mono text-[13px] shadow-inner" />
+                              </div>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            <label className="text-[12.5px] font-medium text-zinc-400">Instance size</label>
+                            <select value={instancePlan} onChange={e => setInstancePlan(e.target.value)} className="w-full h-10 bg-[#050505] border border-zinc-800 rounded-lg px-3 text-[13px] text-white">
+                              <option value="free">Free — 0.1 CPU / 256 MB</option>
+                              <option value="starter">Starter — 0.5 CPU / 512 MB</option>
+                              <option value="standard">Standard — 1 CPU / 2 GB</option>
+                              <option value="pro">Pro — 2 CPU / 4 GB</option>
+                            </select>
+                            <p className="text-[11.5px] text-zinc-500">Sizes above your plan are rejected by the server.</p>
+                          </div>
+                        </>
+                      )}
                       <div className="space-y-2">
                         <label className="text-[12.5px] font-medium text-zinc-400">Install Command</label>
                         <Input 
@@ -520,7 +509,8 @@ export default function NewProjectPage() {
                 <Button variant="outline" onClick={() => setSelectedRepo(null)} disabled={isDeploying} className="bg-transparent border-zinc-700 text-white hover:bg-zinc-800 rounded-xl px-8 h-12 font-medium">
                   Cancel
                 </Button>
-                <Button onClick={handleDeploy} disabled={isDeploying} className="flex-1 bg-white text-black hover:bg-zinc-200 rounded-xl h-12 font-semibold text-[15px] shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all">
+                {error && <p className="text-[13px] text-red-400 mb-2">{error}</p>}
+                <Button onClick={handleDeploy} disabled={isDeploying || !projectName.trim()} className="flex-1 bg-white text-black hover:bg-zinc-200 rounded-xl h-12 font-semibold text-[15px] shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all">
                   {isDeploying ? (
                     <div className="flex items-center justify-center gap-2.5">
                       <div className="h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
