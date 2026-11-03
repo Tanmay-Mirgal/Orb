@@ -56,6 +56,7 @@ Everything a customer needs is built in: environment variables, custom domains w
 | Background workers | – | ✓ | ✅ |
 | Cron jobs | – | ✓ | ✅ (BullMQ job schedulers → one-off containers) |
 | Dockerfile deploys | – | ✓ | ✅ (root dir + custom path) |
+| Deploy a prebuilt Docker image (Docker Hub, GHCR, any registry) | – | ✓ | ✅ pulled by the worker, private registries via an encrypted login, port auto-detected from `EXPOSE` |
 | Framework auto-detection | ✓ | – | ✅ same detector in dashboard and worker |
 | Preview deployments per branch | ✓ | ✓ | ✅ immutable URL per deployment |
 | Instant rollback / promote | ✓ | ✓ | ✅ pointer flip (static) / re-release (services) |
@@ -288,6 +289,8 @@ sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy     # need
 **Create a project** → pick the repo → Orb detects framework, commands, port; adjust and deploy. Settings live under *Project → Settings*; changes apply to the next deployment (deployments are immutable and keep a snapshot of the settings they were built with).
 
 **Supported out of the box** — Next.js, Nuxt, Remix/React Router, Astro (static + SSR), SvelteKit, Gatsby, Docusaurus, Eleventy, CRA, Vue CLI, Angular, Vite, Express, Fastify, Koa, Hono, Hapi, NestJS, generic Node, Flask, FastAPI, Django (set the start command), Go, plain HTML, and **anything with a Dockerfile**. npm / yarn / pnpm are detected from the lockfile; Node version from `.nvmrc` / `engines`.
+
+**Deploy a Docker image** — in the wizard pick *Web service / Worker / Cron job*, then *Docker image* as the source and enter `nginx:1.27`, `ghcr.io/owner/app:latest` or `owner/app@sha256:…`. The worker pulls it (private images: add a registry username + password/token, stored encrypted and used only for that pull), rejects Windows / wrong-architecture images and anything over `MAX_IMAGE_MB`, keeps it under an Orb tag and hands it to the normal release path, so health checks, zero-downtime releases, rollbacks, domains and scale-to-zero all work the same. Leave *Port* empty and Orb uses the port the image declares with `EXPOSE`. *Deploy* pulls the image again, so a moved tag such as `latest` is picked up. Variables are runtime-only for image projects and can be set in the wizard and later under *Project → Environment*. Registries on loopback/private addresses and Orb's own registry are refused. Customer images keep a minimal capability set (`CHOWN`, `SETUID`, `SETGID`, …) so stock images such as nginx can start as root and drop privileges; everything else is still dropped.
 
 **Environment variables** — scope: *build*, *runtime* or *both*; target: *all*, *production* or *preview* (a specific target overrides `all`). "Sensitive" values can be replaced but never read back; build logs mask them. Paste a whole `.env` file to import. Changes apply on the next deployment.
 

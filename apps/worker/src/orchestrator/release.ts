@@ -78,6 +78,8 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
       return;
     }
     if (!deployment.imageRef) throw new Error('Deployment has no image to run');
+    if (config.type === 'web_service' && !(config.port > 0)) throw new Error('Deployment has no port to route traffic to');
+    const fromImage = config.source === 'image';
 
     const plan = getInstancePlan(config.instancePlan);
     const active = await db
@@ -115,8 +117,12 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
             healthCheckTimeoutSec: 90,
             cpuMillis: plan.cpuMillis,
             memoryMb: plan.memoryMb,
-            commitSha: deployment.commitHash,
-            branch: deployment.branch,
+            // An image deployment has no commit (its commitHash is the image digest) and no branch.
+            commitSha: fromImage ? null : deployment.commitHash,
+            branch: fromImage ? null : deployment.branch,
+            // Built images bake their start command in; a customer's image may need its default command replaced.
+            startCommand: fromImage ? config.startCommand?.trim() || undefined : undefined,
+            prebuilt: fromImage,
             publicUrl: deploymentUrl(deployment.subdomain ?? project.slug ?? ''),
           };
           const started = await ctx.runners.call<RunnerStartResult>(nodeId, 'start', payload, ctx.config.startTimeoutMs);

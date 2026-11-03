@@ -2,7 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import {
-  and, count, deployments, desc, domains, eq, gte, inArray, instances, isNull, memberships, notifications, organizations, projectRepositories, projects, sql, usageHourly, users,
+  and, count, deployments, desc, domains, eq, gte, inArray, instances, isNull, memberships, notifications, organizations, projectRegistryCredentials, projectRepositories, projects, sql, usageHourly, users,
 } from "database";
 import { can, getOrgPlan } from "shared";
 import { auth } from "@/lib/auth";
@@ -194,11 +194,20 @@ export async function getUsage() {
 export async function getProjectBySlug(slug: string) {
   const user = await requireUser();
   const [row] = await db
-    .select({ project: projects, repository: projectRepositories, org: organizations, role: memberships.role })
+    .select({
+      project: projects,
+      repository: projectRepositories,
+      org: organizations,
+      role: memberships.role,
+      // Only the login name: the password is write-only and never leaves the server.
+      registryUsername: projectRegistryCredentials.username,
+      registryHost: projectRegistryCredentials.registry,
+    })
     .from(projects)
     .innerJoin(organizations, eq(organizations.id, projects.orgId))
     .innerJoin(memberships, and(eq(memberships.orgId, projects.orgId), eq(memberships.userId, user.id)))
     .leftJoin(projectRepositories, eq(projects.id, projectRepositories.projectId))
+    .leftJoin(projectRegistryCredentials, eq(projects.id, projectRegistryCredentials.projectId))
     .where(eq(projects.slug, slug))
     .limit(1);
   return row ?? null;

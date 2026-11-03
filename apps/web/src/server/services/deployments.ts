@@ -31,6 +31,8 @@ import { getBuildQueue, getRedis, getReleaseQueue } from '../infra';
 export function snapshotConfig(project: Project): DeploymentConfig {
   return {
     type: project.type as ProjectType,
+    source: project.sourceType === 'image' ? 'image' : 'git',
+    image: project.dockerImage,
     framework: project.framework,
     rootDirectory: project.rootDirectory ?? '',
     installCommand: project.installCommand,
@@ -48,7 +50,8 @@ export function snapshotConfig(project: Project): DeploymentConfig {
 
 export interface CreateDeploymentInput {
   project: Project;
-  repository: ProjectRepository;
+  /** `null` for Docker image projects, which are deployed without a repository. */
+  repository: ProjectRepository | null;
   orgPlan: string;
   environment: DeploymentEnvironment;
   trigger: DeploymentTrigger;
@@ -74,6 +77,10 @@ export async function createDeployment(input: CreateDeploymentInput): Promise<De
     throw planLimit('Preview deployments are not included in your plan');
   }
   if (!project.slug) throw badRequest('Project has no slug');
+  const config = input.config ?? snapshotConfig(project);
+  const fromImage = config.source === 'image';
+  if (fromImage && !config.image) throw badRequest('Project has no Docker image configured');
+  if (!fromImage && !repository) throw badRequest('Project has no connected repository');
 
   const [pending] = await db
     .select({ n: count() })
@@ -92,12 +99,13 @@ export async function createDeployment(input: CreateDeploymentInput): Promise<De
       status: DeploymentStatus.QUEUED,
       environment: input.environment,
       trigger: input.trigger,
-      branch: input.branch ?? repository.branch,
+      branch: fromImage ? null : (input.branch ?? repository!.branch),
       commitHash: input.commitSha ?? null,
-      commitMessage: input.commitMessage?.slice(0, 1000) ?? null,
+      // Image deployments have no commit: the list shows which image was deployed instead.
+      commitMessage: (input.commitMessage ?? (fromImage ? `Docker image ${config.image}` : null))?.slice(0, 1000) ?? null,
       commitAuthor: input.commitAuthor?.slice(0, 255) ?? null,
       subdomain: deploymentSubdomain(project.slug, id),
-      config: input.config ?? snapshotConfig(project),
+      config,
       createdBy: input.createdBy ?? null,
     })
     .returning();

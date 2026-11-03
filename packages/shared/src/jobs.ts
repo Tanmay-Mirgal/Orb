@@ -35,6 +35,8 @@ export interface RunnerStartPayload {
   commitSha?: string | null;
   branch?: string | null;
   publicUrl: string;
+  /** A customer-supplied image (not one Orb generated): it may start as root and drop privileges, so it keeps a minimal capability set. */
+  prebuilt?: boolean;
 }
 
 export interface RunnerStartResult {
@@ -57,6 +59,7 @@ export interface RunnerRunOncePayload {
   memoryMb: number;
   timeoutSec: number;
   environment: DeploymentEnvironment;
+  prebuilt?: boolean;
 }
 
 export interface RunnerRunOnceResult {
@@ -103,6 +106,9 @@ export interface InstanceRoute {
 /** Immutable snapshot of project configuration taken when a deployment is created (redeploys/rollbacks reuse it). */
 export interface DeploymentConfig {
   type: ProjectType;
+  /** `image` deployments pull `image` instead of cloning and building a repository. Absent on older rows = git. */
+  source?: 'git' | 'image';
+  image?: string | null;
   framework?: string | null;
   rootDirectory: string;
   installCommand?: string | null;
@@ -110,6 +116,7 @@ export interface DeploymentConfig {
   startCommand?: string | null;
   outputDirectory?: string | null;
   dockerfilePath?: string | null;
+  /** 0 = "auto": image deployments take the port the image declares with EXPOSE. */
   port: number;
   healthCheckPath: string;
   instancePlan: string;

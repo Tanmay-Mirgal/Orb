@@ -17,8 +17,23 @@ export const GET = route<{ projectId: string }>(async ({ req, params }) => {
 export const POST = route<{ projectId: string }>(async ({ req, params }) => {
   const auth = await authenticate(req);
   const ctx = await projectContext(auth, params.projectId, 'deployment:create');
-  if (!ctx.repository) throw badRequest('Project has no connected repository');
   const input = await parseBody(req, createDeploymentSchema);
+
+  // Docker image projects: "deploy" pulls the configured image again (picks up a moved tag such as `latest`).
+  if (ctx.project.sourceType === 'image') {
+    const deployment = await createDeployment({
+      project: ctx.project,
+      repository: null,
+      orgPlan: ctx.org.plan,
+      environment: 'production',
+      trigger: auth.via === 'token' ? 'api' : 'manual',
+      createdBy: auth.userId,
+    });
+    await audit(auth, { orgId: ctx.org.id, action: 'deployment.create', targetType: 'deployment', targetId: deployment.id, metadata: { image: ctx.project.dockerImage } });
+    return Response.json({ success: true, deployment }, { status: 201 });
+  }
+
+  if (!ctx.repository) throw badRequest('Project has no connected repository');
   const branch = input.branch ?? ctx.repository.branch;
   const isPreview = input.preview ?? branch !== ctx.repository.branch;
   const deployment = await createDeployment({

@@ -350,6 +350,7 @@ async function runCron(ctx: WorkerContext, data: { projectId: string }) {
       memoryMb: plan.memoryMb,
       timeoutSec,
       environment: 'production',
+      prebuilt: row.deployment.config.source === 'image',
     };
     return await ctx.runners.call<RunnerRunOnceResult>(nodeId!, 'run-once', payload, (timeoutSec + 120) * 1000);
   } finally {

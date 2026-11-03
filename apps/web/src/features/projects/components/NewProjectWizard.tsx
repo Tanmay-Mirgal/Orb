@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, ArrowRight, Check, Cog, Globe, Lock, Rocket, Search, Server, Timer,
+  ArrowLeft, ArrowRight, Check, Cog, Container, Globe, Lock, Rocket, Search, Server, Timer,
 } from "lucide-react";
-import { getOrgPlan, INSTANCE_PLANS, parseDotenv } from "shared";
+import { getOrgPlan, imageDisplayName, imageReferenceError, INSTANCE_PLANS, parseDotenv } from "shared";
 import { cn } from "@/lib/utils";
 import { api, errorMessage } from "@/lib/api-client";
 import { timeAgo } from "@/lib/format";
@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/toast";
 import { GithubIcon, PageHeader } from "@/components/app/page";
 
 type ProjectKind = "static" | "web_service" | "worker" | "cron";
+type Source = "git" | "image";
 interface Repo {
   id: number;
   name: string;
@@ -35,7 +36,7 @@ const KINDS: Array<{ id: ProjectKind; title: string; text: string; examples: str
   { id: "cron", title: "Cron job", text: "A container that runs on a schedule and exits.", examples: "Reports, cleanups, syncs", icon: Timer },
 ];
 
-const STEPS = ["Type", "Repository", "Configure"];
+const STEPS = ["Type", "Source", "Configure"];
 
 function Stepper({ step }: { step: number }) {
   return (
@@ -65,6 +66,11 @@ export function NewProjectWizard({ planId }: { planId: string }) {
 
   const [step, setStep] = useState(0);
   const [kind, setKind] = useState<ProjectKind>("web_service");
+  const [source, setSource] = useState<Source>("git");
+  const [image, setImage] = useState("");
+  const [regUser, setRegUser] = useState("");
+  const [regPass, setRegPass] = useState("");
+  const [imagePort, setImagePort] = useState(""); // empty = detect from the image
   const [repos, setRepos] = useState<Repo[] | null>(null);
   const [repoError, setRepoError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -88,16 +94,16 @@ export function NewProjectWizard({ planId }: { planId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Repositories are fetched once the user reaches step 2.
+  // Repositories are fetched once the user reaches step 2 (and only when deploying from Git).
   useEffect(() => {
-    if (step < 1 || repos) return;
+    if (step < 1 || repos || source !== "git") return;
     api<{ repos: Repo[] }>("/api/v1/github/repos")
       .then((d) => setRepos(d.repos))
       .catch((e) => {
         setRepoError(errorMessage(e));
         setRepos([]);
       });
-  }, [step, repos]);
+  }, [step, repos, source]);
 
   // Branches + framework detection (the same detector the build worker uses) when a repo is picked or the root changes.
   useEffect(() => {
@@ -134,6 +140,11 @@ export function NewProjectWizard({ planId }: { planId: string }) {
   const filtered = useMemo(() => (repos ?? []).filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase())), [repos, search]);
   const env = useMemo(() => parseDotenv(envText), [envText]);
   const isServer = kind !== "static";
+  const isImage = source === "image";
+  const imageProblem = image.trim() ? imageReferenceError(image) : null;
+  const imageReady = image.trim().length > 0 && !imageProblem;
+  const portValue = imagePort.trim() === "" ? 0 : Number(imagePort);
+  const portInvalid = isImage && kind === "web_service" && imagePort.trim() !== "" && !(Number.isInteger(portValue) && portValue >= 1 && portValue <= 65535);
 
   const pickRepo = (r: Repo) => {
     setRepo(r);
@@ -142,31 +153,54 @@ export function NewProjectWizard({ planId }: { planId: string }) {
     setStep(2);
   };
 
+  const pickImage = () => {
+    setName((n) => n || imageDisplayName(image.trim()));
+    setStep(2);
+  };
+
+  const chooseSource = (next: Source) => {
+    setSource(next);
+    setError(null);
+  };
+
   const submit = async () => {
-    if (!repo) return;
+    if (isImage ? !imageReady : !repo) return;
     setSubmitting(true);
     setError(null);
     try {
-      const data = await api("/api/v1/projects", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          type: kind,
-          repository: { fullName: repo.full_name, id: repo.id, branch },
-          framework: framework || undefined,
-          rootDirectory: rootDir,
-          installCommand: installCmd || undefined,
-          buildCommand: buildCmd || undefined,
-          startCommand: isServer ? startCmd || undefined : undefined,
-          outputDirectory: kind === "static" ? outputDir || undefined : undefined,
-          port: kind === "web_service" ? port : undefined,
-          healthCheckPath: kind === "web_service" ? healthPath : undefined,
-          cronSchedule: kind === "cron" ? schedule : undefined,
-          instancePlan: isServer ? instancePlan : undefined,
-          envVars: env.vars.map((v) => ({ key: v.key, value: v.value, target: "all", scope: "both", isSecret: true })),
-          deploy: true,
-        }),
-      });
+      const common = {
+        name,
+        type: kind,
+        startCommand: isServer ? startCmd.trim() || undefined : undefined,
+        cronSchedule: kind === "cron" ? schedule : undefined,
+        instancePlan: isServer ? instancePlan : undefined,
+        deploy: true,
+      };
+      const body = isImage
+        ? {
+            ...common,
+            source: "image",
+            image: image.trim(),
+            registry: regUser.trim() && regPass ? { username: regUser.trim(), password: regPass } : undefined,
+            port: kind === "web_service" ? portValue : undefined,
+            healthCheckPath: kind === "web_service" ? healthPath : undefined,
+            // A prebuilt image has no build step, so its variables only matter when the container starts.
+            envVars: env.vars.map((v) => ({ key: v.key, value: v.value, target: "all", scope: "runtime", isSecret: true })),
+          }
+        : {
+            ...common,
+            source: "git",
+            repository: { fullName: repo!.full_name, id: repo!.id, branch },
+            framework: framework || undefined,
+            rootDirectory: rootDir,
+            installCommand: installCmd || undefined,
+            buildCommand: buildCmd || undefined,
+            outputDirectory: kind === "static" ? outputDir || undefined : undefined,
+            port: kind === "web_service" ? port : undefined,
+            healthCheckPath: kind === "web_service" ? healthPath : undefined,
+            envVars: env.vars.map((v) => ({ key: v.key, value: v.value, target: "all", scope: "both", isSecret: true })),
+          };
+      const data = await api("/api/v1/projects", { method: "POST", body: JSON.stringify(body) });
       toast.success("Project created", "Your first deployment is building.");
       router.push(`/dashboard/projects/${data.project.slug}`);
     } catch (e) {
@@ -177,7 +211,7 @@ export function NewProjectWizard({ planId }: { planId: string }) {
 
   return (
     <div className="animate-fade-up mx-auto max-w-3xl space-y-8">
-      <PageHeader title="Create a new project" description="Deploy from a Git repository in a few steps." actions={<Stepper step={step} />} />
+      <PageHeader title="Create a new project" description="Deploy from a Git repository or a Docker image in a few steps." actions={<Stepper step={step} />} />
 
       {/* ───────── Step 1: type ───────── */}
       {step === 0 && (
@@ -186,7 +220,10 @@ export function NewProjectWizard({ planId }: { planId: string }) {
             {KINDS.map((k) => (
               <button
                 key={k.id}
-                onClick={() => setKind(k.id)}
+                onClick={() => {
+                  setKind(k.id);
+                  if (k.id === "static") setSource("git"); // static sites are built from a repository
+                }}
                 aria-pressed={kind === k.id}
                 className={cn(
                   "flex flex-col gap-3 rounded-xl border bg-card p-5 text-left shadow-sm transition-all hover:border-foreground/30",
@@ -204,6 +241,9 @@ export function NewProjectWizard({ planId }: { planId: string }) {
               </button>
             ))}
           </div>
+          <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+            <Container className="size-4 shrink-0" /> Web services, workers and cron jobs can also run a ready-made Docker image — you choose the source in the next step.
+          </p>
           <div className="flex justify-end">
             <Button onClick={() => setStep(1)}>
               Continue <ArrowRight />
@@ -212,17 +252,81 @@ export function NewProjectWizard({ planId }: { planId: string }) {
         </div>
       )}
 
-      {/* ───────── Step 2: repository ───────── */}
+      {/* ───────── Step 2: source (repository or Docker image) ───────── */}
       {step === 1 && (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" onClick={() => setStep(0)} aria-label="Back">
               <ArrowLeft />
             </Button>
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search your repositories…" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
+            <div className="grid flex-1 gap-3 sm:grid-cols-2">
+              {([
+                { id: "git", title: "GitHub repository", text: "Orb clones, builds and deploys your code.", icon: GithubIcon, disabled: false },
+                { id: "image", title: "Docker image", text: kind === "static" ? "Not available for static sites." : "Pull a prebuilt image from Docker Hub, GHCR or any registry.", icon: Container, disabled: kind === "static" },
+              ] as const).map((s) => (
+                <button
+                  key={s.id}
+                  disabled={s.disabled}
+                  onClick={() => chooseSource(s.id)}
+                  aria-pressed={source === s.id}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border bg-card p-3.5 text-left shadow-sm transition-all hover:border-foreground/30 disabled:cursor-not-allowed disabled:opacity-50",
+                    source === s.id && "border-accent ring-2 ring-accent/30",
+                  )}
+                >
+                  <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg border", source === s.id ? "border-accent/40 bg-accent-soft text-accent" : "bg-secondary text-muted-foreground")}>
+                    <s.icon className="size-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">{s.title}</span>
+                    <span className="block text-xs text-muted-foreground">{s.text}</span>
+                  </span>
+                </button>
+              ))}
             </div>
+          </div>
+
+          {isImage && (
+            <Card className="space-y-5 p-5">
+              <Field label="Docker image" hint="Image name with an optional tag or digest. Without a tag, latest is used.">
+                <Input
+                  className="font-mono text-[13px]"
+                  value={image}
+                  onChange={(e) => setImage(e.target.value)}
+                  placeholder="nginx:1.27   ·   ghcr.io/owner/app:latest   ·   owner/app"
+                  autoFocus
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-invalid={Boolean(imageProblem)}
+                />
+                {imageProblem && <p className="text-xs text-destructive">{imageProblem}</p>}
+              </Field>
+              <details className="group text-sm" open={Boolean(regUser || regPass)}>
+                <summary className="cursor-pointer text-[13px] font-medium text-muted-foreground hover:text-foreground">Private image? Add registry login</summary>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <Field label="Username">
+                    <Input value={regUser} onChange={(e) => setRegUser(e.target.value)} autoComplete="off" />
+                  </Field>
+                  <Field label="Password or access token">
+                    <Input type="password" value={regPass} onChange={(e) => setRegPass(e.target.value)} autoComplete="new-password" />
+                  </Field>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">Stored encrypted and used only to pull this image. Docker Hub also needs it when you hit the anonymous pull limit.</p>
+              </details>
+              <div className="flex justify-end">
+                <Button onClick={pickImage} disabled={!imageReady || Boolean(regUser.trim()) !== Boolean(regPass)}>
+                  Continue <ArrowRight />
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {!isImage && (
+          <>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input className="pl-9" placeholder="Search your repositories…" value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
           </div>
 
           <Card className="overflow-hidden">
@@ -270,21 +374,23 @@ export function NewProjectWizard({ planId }: { planId: string }) {
               </ul>
             )}
           </Card>
+          </>
+          )}
         </div>
       )}
 
       {/* ───────── Step 3: configure ───────── */}
-      {step === 2 && repo && (
+      {step === 2 && (isImage ? imageReady : repo) && (
         <div className="space-y-6">
           <Card className="flex items-center gap-3 p-4">
             <span className="flex size-9 items-center justify-center rounded-lg border bg-secondary">
-              <GithubIcon className="size-4" />
+              {isImage ? <Container className="size-4" /> : <GithubIcon className="size-4" />}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{repo.full_name}</p>
-              <p className="text-xs text-muted-foreground">{KINDS.find((k) => k.id === kind)?.title}{framework ? ` · ${framework}` : ""}</p>
+              <p className={cn("truncate text-sm font-medium", isImage && "font-mono")}>{isImage ? image.trim() : repo!.full_name}</p>
+              <p className="text-xs text-muted-foreground">{KINDS.find((k) => k.id === kind)?.title}{isImage ? " · Docker image" : framework ? ` · ${framework}` : ""}</p>
             </div>
-            {detecting && <Badge variant="accent" dot pulse>Detecting…</Badge>}
+            {!isImage && detecting && <Badge variant="accent" dot pulse>Detecting…</Badge>}
             <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
               Change
             </Button>
@@ -296,6 +402,8 @@ export function NewProjectWizard({ planId }: { planId: string }) {
               <Field label="Project name" hint="Used for the default URL.">
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
+              {!isImage && (
+              <>
               <Field label="Production branch">
                 {branches.length > 0 ? (
                   <Select value={branch} onChange={(e) => setBranch(e.target.value)}>
@@ -313,9 +421,38 @@ export function NewProjectWizard({ planId }: { planId: string }) {
               <Field label="Framework">
                 <Input value={framework} onChange={(e) => setFramework(e.target.value)} placeholder="Detected automatically" />
               </Field>
+              </>
+              )}
             </div>
           </Card>
 
+          {isImage && kind !== "static" && (
+            <Card className="space-y-5 p-5">
+              <h2 className="text-[15px] font-semibold">Run</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {kind === "web_service" && (
+                  <>
+                    <Field label="Port" hint="Port the container listens on. Leave empty to use the port the image declares (EXPOSE). Orb also sets $PORT to it.">
+                      <Input type="number" min={1} max={65535} value={imagePort} onChange={(e) => setImagePort(e.target.value)} placeholder="Auto-detect" aria-invalid={portInvalid} />
+                    </Field>
+                    <Field label="Health check path" hint="Must return a non-error status before traffic is switched.">
+                      <Input className="font-mono text-[13px]" value={healthPath} onChange={(e) => setHealthPath(e.target.value)} />
+                    </Field>
+                  </>
+                )}
+                <Field label={kind === "cron" ? "Command" : "Command override"} hint={kind === "cron" ? "Runs inside the image on every schedule tick. Leave empty for the image default." : "Optional. Replaces the image's default command."} className={kind === "cron" ? "" : "sm:col-span-2"}>
+                  <Input className="font-mono text-[13px]" value={startCmd} onChange={(e) => setStartCmd(e.target.value)} placeholder="Image default" />
+                </Field>
+                {kind === "cron" && (
+                  <Field label="Schedule (cron)" hint="Minute hour day month weekday, e.g. 0 3 * * *">
+                    <Input className="font-mono text-[13px]" value={schedule} onChange={(e) => setSchedule(e.target.value)} />
+                  </Field>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {!isImage && (
           <Card className="space-y-5 p-5">
             <h2 className="text-[15px] font-semibold">Build & run</h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -351,6 +488,7 @@ export function NewProjectWizard({ planId }: { planId: string }) {
               )}
             </div>
           </Card>
+          )}
 
           {isServer && (
             <Card className="space-y-4 p-5">
@@ -395,7 +533,11 @@ export function NewProjectWizard({ planId }: { planId: string }) {
               placeholder={"Paste your .env contents here\nAPI_URL=https://api.example.com\nSECRET_KEY=…"}
               spellCheck={false}
             />
-            <p className="text-xs text-muted-foreground">Stored encrypted and marked sensitive. You can edit them later under Project → Environment.</p>
+            <p className="text-xs text-muted-foreground">
+              {isImage
+                ? "Passed to your container when it starts. Stored encrypted and marked sensitive. You can add or change them any time under Project → Environment, then redeploy."
+                : "Stored encrypted and marked sensitive. You can edit them later under Project → Environment."}
+            </p>
             {env.skipped.length > 0 && <p className="text-xs text-warning">Ignored invalid or reserved keys: {env.skipped.join(", ")}</p>}
           </Card>
 
@@ -405,7 +547,7 @@ export function NewProjectWizard({ planId }: { planId: string }) {
             <Button variant="ghost" onClick={() => setStep(1)}>
               <ArrowLeft /> Back
             </Button>
-            <Button size="lg" variant="accent" onClick={submit} loading={submitting} disabled={name.trim().length < 2}>
+            <Button size="lg" variant="accent" onClick={submit} loading={submitting} disabled={name.trim().length < 2 || portInvalid}>
               <Rocket /> Create & deploy
             </Button>
           </div>

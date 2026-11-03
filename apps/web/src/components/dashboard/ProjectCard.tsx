@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Box, Clock, Code2, GitBranch, Globe, Server, Timer, Cog } from "lucide-react";
+import { Box, Clock, Code2, Container, GitBranch, Globe, Server, Timer, Cog } from "lucide-react";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { GithubIcon } from "@/components/app/page";
 import { hostOf, projectUrl, timeAgo, TYPE_LABEL } from "@/lib/format";
@@ -12,7 +12,7 @@ const TYPE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 export interface ProjectCardData {
-  project: { id: string; name: string; slug: string | null; type: string; framework: string | null };
+  project: { id: string; name: string; slug: string | null; type: string; framework: string | null; sourceType?: string; dockerImage?: string | null };
   repository: { githubRepositoryName: string; branch: string } | null;
   current: { status: string; readyAt: string | null; createdAt: string; commitMessage: string | null } | null;
   latest: { status: string; createdAt: string; commitMessage: string | null } | null;
@@ -41,9 +41,15 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
         {status ? <StatusBadge status={status} /> : <Badge>New</Badge>}
       </div>
 
-      <p className="line-clamp-1 min-h-5 text-[13px] text-muted-foreground">{latest?.commitMessage ?? "Connect a repository and deploy to see activity here."}</p>
+      <p className="line-clamp-1 min-h-5 text-[13px] text-muted-foreground">{latest?.commitMessage ?? (project.sourceType === "image" ? "Deploy to pull the image and see activity here." : "Connect a repository and deploy to see activity here.")}</p>
 
       <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t pt-3 text-xs text-muted-foreground">
+        {project.sourceType === "image" && project.dockerImage && (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Container className="size-3.5 shrink-0" />
+            <span className="truncate font-mono">{project.dockerImage}</span>
+          </span>
+        )}
         {repository && (
           <span className="flex min-w-0 items-center gap-1.5">
             <GithubIcon className="size-3.5 shrink-0" />

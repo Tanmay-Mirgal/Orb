@@ -9,6 +9,7 @@ import {
   inArray,
   instances,
   ne,
+  projectRegistryCredentials,
   projectRepositories,
   projects,
   type Deployment,
@@ -20,8 +21,10 @@ import {
   getInstancePlan,
   getOrgPlan,
   isReservedSlug,
+  parseImageReference,
   slugify,
   type CreateProjectInput,
+  type RegistryCredentialsInput,
   type UpdateProjectInput,
   type ProjectType,
 } from 'shared';
@@ -54,13 +57,37 @@ async function uniqueProjectSlug(name: string): Promise<string> {
   return `${base}-${randomBytes(4).toString('hex')}`;
 }
 
+/**
+ * Stores (or, with `null`, removes) the login a Docker image project uses to pull from a private registry.
+ * The login is bound to the registry host of `image`; the worker presents it to that host only.
+ */
+async function saveRegistryCredentials(
+  executor: Pick<typeof db, 'insert' | 'delete'>,
+  projectId: string,
+  credentials: RegistryCredentialsInput | null,
+  image: string | null,
+): Promise<void> {
+  if (!credentials) {
+    await executor.delete(projectRegistryCredentials).where(eq(projectRegistryCredentials.projectId, projectId));
+    return;
+  }
+  const registry = image ? parseImageReference(image)?.registry : undefined;
+  if (!registry) throw badRequest('Set a valid Docker image before adding a registry login');
+  const password = encryptSecret(credentials.password, `${projectId}:registry`);
+  await executor
+    .insert(projectRegistryCredentials)
+    .values({ projectId, registry, username: credentials.username, password })
+    .onConflictDoUpdate({ target: projectRegistryCredentials.projectId, set: { registry, username: credentials.username, password, updatedAt: new Date() } });
+}
+
 export async function createProject(options: {
   userId: string;
   org: Organization;
   input: CreateProjectInput;
-}): Promise<{ project: Project; repository: ProjectRepository; deployment: Deployment | null }> {
+}): Promise<{ project: Project; repository: ProjectRepository | null; deployment: Deployment | null }> {
   const { userId, org, input } = options;
   const plan = getOrgPlan(org.plan);
+  const isImage = input.source === 'image';
 
   const [existing] = await db.select({ n: count() }).from(projects).where(eq(projects.orgId, org.id));
   if ((existing?.n ?? 0) >= plan.maxProjects) {
@@ -82,9 +109,12 @@ export async function createProject(options: {
     }
   }
 
+  if (!isImage && input.port === 0) throw badRequest('Port must be between 1 and 65535');
+  if (isImage && type !== 'static' && input.previewDeployments) throw badRequest('Preview deployments need a Git repository');
+
   // Trust GitHub, not the browser: confirm the user can read the repository and take canonical identifiers from it.
-  const token = await getUserGithubToken(userId);
-  const repo = await getRepo(token, input.repository.fullName);
+  // Docker image projects have no repository: the image is pulled by the worker, which validates it again.
+  const repo = isImage ? null : await getRepo(await getUserGithubToken(userId), input.repository!.fullName);
 
   const slug = await uniqueProjectSlug(input.name);
   const created = await db.transaction(async (tx) => {
@@ -96,31 +126,38 @@ export async function createProject(options: {
         userId,
         orgId: org.id,
         type,
-        framework: input.framework,
-        rootDirectory: input.rootDirectory ?? '',
-        installCommand: input.installCommand,
-        buildCommand: input.buildCommand,
+        sourceType: isImage ? 'image' : 'git',
+        dockerImage: isImage ? input.image : null,
+        framework: isImage ? 'Docker image' : input.framework,
+        rootDirectory: isImage ? '' : (input.rootDirectory ?? ''),
+        installCommand: isImage ? null : input.installCommand,
+        buildCommand: isImage ? null : input.buildCommand,
         startCommand: input.startCommand,
-        outputDirectory: input.outputDirectory ?? (type === 'static' ? 'dist' : null),
-        dockerfilePath: input.dockerfilePath,
-        port: input.port ?? 3000,
+        outputDirectory: isImage ? null : (input.outputDirectory ?? (type === 'static' ? 'dist' : null)),
+        dockerfilePath: isImage ? null : input.dockerfilePath,
+        // 0 = auto: the worker reads the port the image declares with EXPOSE.
+        port: isImage ? (input.port ?? 0) : (input.port ?? 3000),
         healthCheckPath: input.healthCheckPath ?? '/',
         instancePlan: input.instancePlan ?? 'free',
         instanceCount: input.instanceCount ?? 1,
         cronSchedule: input.cronSchedule,
-        autoDeploy: input.autoDeploy ?? true,
+        autoDeploy: isImage ? false : (input.autoDeploy ?? true),
         previewDeployments: input.previewDeployments ?? false,
       })
       .returning();
-    const [repository] = await tx
-      .insert(projectRepositories)
-      .values({
-        projectId: project!.id,
-        githubRepositoryId: repo.id,
-        githubRepositoryName: repo.full_name,
-        branch: input.repository.branch || repo.default_branch,
-      })
-      .returning();
+    let repository: ProjectRepository | null = null;
+    if (repo) {
+      [repository] = await tx
+        .insert(projectRepositories)
+        .values({
+          projectId: project!.id,
+          githubRepositoryId: repo.id,
+          githubRepositoryName: repo.full_name,
+          branch: input.repository!.branch || repo.default_branch,
+        })
+        .returning();
+    }
+    if (isImage && input.registry) await saveRegistryCredentials(tx, project!.id, input.registry, input.image ?? null);
     if (input.envVars?.length) {
       await tx.insert(environmentVariables).values(
         input.envVars.map((v) => ({
@@ -133,7 +170,7 @@ export async function createProject(options: {
         })),
       );
     }
-    return { project: project!, repository: repository! };
+    return { project: project!, repository };
   });
 
   const deployment = input.deploy
@@ -156,12 +193,18 @@ export async function updateProject(options: {
 }): Promise<Project> {
   const { org, project, input } = options;
   assertWithinPlan(org, input);
-  const { branch, ...rest } = input;
+  const { branch, image, registry, ...rest } = input;
+  const isImage = project.sourceType === 'image';
+  if (!isImage && (image !== undefined || registry !== undefined)) {
+    throw badRequest('Only Docker image projects have an image and registry login');
+  }
+  if (!isImage && input.port === 0) throw badRequest('Port must be between 1 and 65535');
 
   const patch: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
   for (const [key, value] of Object.entries(rest)) {
     if (value !== undefined) (patch as Record<string, unknown>)[key] = value;
   }
+  if (image !== undefined) patch.dockerImage = image;
   if (project.type === 'cron' && patch.cronSchedule === undefined && !project.cronSchedule) {
     throw badRequest('Cron jobs need a schedule');
   }
@@ -169,6 +212,7 @@ export async function updateProject(options: {
   if (branch) {
     await db.update(projectRepositories).set({ branch }).where(eq(projectRepositories.projectId, project.id));
   }
+  if (registry !== undefined) await saveRegistryCredentials(db, project.id, registry, updated!.dockerImage);
   return updated!;
 }
 

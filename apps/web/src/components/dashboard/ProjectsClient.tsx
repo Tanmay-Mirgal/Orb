@@ -21,7 +21,7 @@ export function ProjectsClient({ cards }: { cards: ProjectCardData[] }) {
     return cards.filter(
       (c) =>
         (filter === "all" || c.project.type === filter) &&
-        (!q || c.project.name.toLowerCase().includes(q) || (c.repository?.githubRepositoryName ?? "").toLowerCase().includes(q)),
+        (!q || c.project.name.toLowerCase().includes(q) || (c.repository?.githubRepositoryName ?? "").toLowerCase().includes(q) || (c.project.dockerImage ?? "").toLowerCase().includes(q)),
     );
   }, [cards, query, filter]);
 
@@ -55,7 +55,7 @@ export function ProjectsClient({ cards }: { cards: ProjectCardData[] }) {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1 sm:max-w-sm">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search by name or repository…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search projects" />
+              <Input className="pl-9" placeholder="Search by name, repository or image…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search projects" />
             </div>
             {options.length > 2 && <Segmented options={options} value={filter} onChange={setFilter} />}
           </div>

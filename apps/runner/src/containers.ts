@@ -82,7 +82,7 @@ export class ContainerManager {
     throw new Error(`Could not fetch runtime environment from the control plane (${lastError})`);
   }
 
-  private hostConfig(cpuMillis: number, memoryMb: number, port?: number): Docker.HostConfig {
+  private hostConfig(cpuMillis: number, memoryMb: number, port?: number, prebuilt = false): Docker.HostConfig {
     const memory = memoryMb * 1024 * 1024;
     return {
       NanoCpus: cpuMillis * 1_000_000,
@@ -90,6 +90,9 @@ export class ContainerManager {
       MemorySwap: memory, // no swap: an over-limit container is OOM-killed instead of thrashing the node
       PidsLimit: 512,
       CapDrop: ['ALL'],
+      // Images Orb generates run as an unprivileged user. Customer images (nginx, httpd, ...) commonly start as root
+      // to chown their data directories and then switch user, which needs these; everything else stays dropped.
+      ...(prebuilt ? { CapAdd: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'FSETID', 'KILL', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'] } : {}),
       SecurityOpt: ['no-new-privileges:true'],
       NetworkMode: this.config.network,
       Ulimits: [{ Name: 'nofile', Soft: 65536, Hard: 65536 }],
@@ -117,6 +120,7 @@ export class ContainerManager {
       name: `orb-${p.instanceId.slice(0, 8)}`,
       Image: p.image,
       Env: Object.entries(platformEnv).map(([k, v]) => `${k}=${v}`),
+      Cmd: p.startCommand ? ['sh', '-c', p.startCommand] : undefined,
       Labels: {
         [MANAGED]: 'true',
         'orb.deployment': p.deploymentId,
@@ -124,7 +128,7 @@ export class ContainerManager {
         'orb.instance': p.instanceId,
       },
       ExposedPorts: exposesPort ? { [`${p.port}/tcp`]: {} } : undefined,
-      HostConfig: { ...this.hostConfig(p.cpuMillis, p.memoryMb, exposesPort ? p.port : undefined), RestartPolicy: { Name: 'unless-stopped' } },
+      HostConfig: { ...this.hostConfig(p.cpuMillis, p.memoryMb, exposesPort ? p.port : undefined, p.prebuilt), RestartPolicy: { Name: 'unless-stopped' } },
     });
 
     try {
@@ -263,7 +267,7 @@ export class ContainerManager {
       Env: Object.entries({ ...userEnv, ORB: '1', ORB_PROJECT_ID: p.projectId, ORB_DEPLOYMENT_ID: p.deploymentId, ORB_ENVIRONMENT: p.environment }).map(([k, v]) => `${k}=${v}`),
       Cmd: p.command ? ['sh', '-c', p.command] : undefined,
       Labels: { [MANAGED]: 'true', 'orb.deployment': p.deploymentId, 'orb.project': p.projectId, 'orb.kind': 'cron' },
-      HostConfig: this.hostConfig(p.cpuMillis, p.memoryMb),
+      HostConfig: this.hostConfig(p.cpuMillis, p.memoryMb, undefined, p.prebuilt),
     });
     try {
       await container.start();

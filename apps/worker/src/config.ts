@@ -15,6 +15,8 @@ export function workerConfig() {
     maxSiteFiles: envInt('MAX_SITE_FILES', 20_000),
     maxSiteBytes: envInt('MAX_SITE_MB', 500) * 1024 * 1024,
     maxSiteFileBytes: envInt('MAX_SITE_FILE_MB', 100) * 1024 * 1024,
+    /** Largest customer-supplied Docker image (uncompressed) a project may deploy; images cost disk on every node. */
+    maxImageBytes: envInt('MAX_IMAGE_MB', 2048) * 1024 * 1024,
     drainDelayMs: envInt('DRAIN_DELAY_SECONDS', 20) * 1000,
     startTimeoutMs: envInt('INSTANCE_START_TIMEOUT_SECONDS', 300) * 1000,
   };

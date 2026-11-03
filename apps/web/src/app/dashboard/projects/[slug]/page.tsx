@@ -9,5 +9,5 @@ export default async function ProjectDetailsPage({ params }: { params: Promise<{
   const data = await getProjectBySlug(slug);
   if (!data) notFound();
 
-  return <ProjectDetailsClient project={data.project} repository={data.repository} role={data.role} />;
+  return <ProjectDetailsClient project={data.project} repository={data.repository} role={data.role} registryLogin={data.registryUsername && data.registryHost ? { username: data.registryUsername, host: data.registryHost } : null} />;
 }

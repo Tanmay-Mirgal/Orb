@@ -9,14 +9,14 @@ export const dynamic = 'force-dynamic';
 export const POST = route<{ deploymentId: string }>(async ({ req, params }) => {
   const auth = await authenticate(req);
   const { deployment, project, repository, org } = await deploymentContext(auth, params.deploymentId, 'deployment:create');
-  if (!repository) throw badRequest('Project has no connected repository');
+  if (!repository && project.sourceType !== 'image') throw badRequest('Project has no connected repository');
   const created = await createDeployment({
     project,
     repository,
     orgPlan: org.plan,
     environment: deployment.environment === 'preview' ? 'preview' : 'production',
     trigger: 'redeploy',
-    branch: deployment.branch ?? repository.branch,
+    branch: deployment.branch ?? repository?.branch,
     commitSha: deployment.commitHash,
     commitMessage: deployment.commitMessage,
     commitAuthor: deployment.commitAuthor,

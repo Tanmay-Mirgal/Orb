@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  Activity, Box, CheckCircle2, ExternalLink, Eye, EyeOff, GitBranch, Globe, Lock, Play, RefreshCcw, RotateCcw, Settings as SettingsIcon, Terminal, Trash2, XCircle,
+  Activity, Box, CheckCircle2, Container, ExternalLink, Eye, EyeOff, GitBranch, Globe, Lock, Play, RefreshCcw, RotateCcw, Settings as SettingsIcon, Terminal, Trash2, XCircle,
 } from "lucide-react";
+import { imageReferenceError, normalizeRegistryHost, parseImageReference } from "shared";
 import { cn } from "@/lib/utils";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatBytes, formatNumber, hostOf, projectUrl, shortSha, timeAgo, TYPE_LABEL } from "@/lib/format";
@@ -47,7 +48,9 @@ function useDeployments(projectId: string) {
   return { deployments, refresh, loaded, busy };
 }
 
-export function ProjectDetailsClient({ project, repository, role }: { project: any; repository: any; role: string }) {
+export type RegistryLogin = { username: string; host: string };
+
+export function ProjectDetailsClient({ project, repository, role, registryLogin }: { project: any; repository: any; role: string; registryLogin?: RegistryLogin | null }) {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [selected, setSelected] = useState<string | null>(null);
@@ -55,6 +58,7 @@ export function ProjectDetailsClient({ project, repository, role }: { project: a
   const { deployments, refresh, loaded } = useDeployments(project.id);
   const canDeploy = role !== "viewer";
   const isStatic = project.type === "static";
+  const isImage = project.sourceType === "image";
   const url = projectUrl(project.slug);
 
   const live = deployments.find((d) => d.id === project.currentDeploymentId) ?? deployments.find((d) => d.status === "READY" && d.environment === "production");
@@ -106,6 +110,11 @@ export function ProjectDetailsClient({ project, repository, role }: { project: a
             {active && <StatusBadge status={active.status} />}
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+            {isImage && (
+              <span className="flex min-w-0 items-center gap-1.5 font-mono">
+                <Container className="size-3.5 shrink-0" /> <span className="truncate">{project.dockerImage}</span>
+              </span>
+            )}
             {repository && (
               <a href={`https://github.com/${repository.githubRepositoryName}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-foreground">
                 <GithubIcon className="size-3.5" /> {repository.githubRepositoryName}
@@ -116,7 +125,7 @@ export function ProjectDetailsClient({ project, repository, role }: { project: a
                 <GitBranch className="size-3.5" /> {repository.branch}
               </span>
             )}
-            {project.framework && <span>{project.framework}</span>}
+            {project.framework && !isImage && <span>{project.framework}</span>}
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -126,7 +135,7 @@ export function ProjectDetailsClient({ project, repository, role }: { project: a
             </a>
           </Button>
           {canDeploy && (
-            <Button onClick={deploy} loading={deploying} disabled={!repository}>
+            <Button onClick={deploy} loading={deploying} disabled={!repository && !isImage}>
               {!deploying && <Play className="fill-current" />} {deployments.length ? "Deploy latest" : "Deploy"}
             </Button>
           )}
@@ -136,13 +145,13 @@ export function ProjectDetailsClient({ project, repository, role }: { project: a
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
       <div className="min-h-[420px]">
-        {tab === "overview" && <OverviewTab live={live} active={active} url={url} loaded={loaded} onAct={act} canDeploy={canDeploy} />}
+        {tab === "overview" && <OverviewTab live={live} active={active} url={url} loaded={loaded} onAct={act} canDeploy={canDeploy} isImage={isImage} />}
         {tab === "deployments" && <DeploymentsTab deployments={deployments} loaded={loaded} live={live} canDeploy={canDeploy} onAct={act} onOpen={(id: string) => { setSelected(id); setTab("overview"); }} />}
         {tab === "logs" && <RuntimeLogsTab projectId={project.id} />}
         {tab === "domains" && <DomainsTab projectId={project.id} canManage={role === "admin" || role === "owner"} />}
-        {tab === "env" && <EnvTab projectId={project.id} canWrite={canDeploy} />}
+        {tab === "env" && <EnvTab projectId={project.id} canWrite={canDeploy} runtimeOnly={isImage} />}
         {tab === "analytics" && <AnalyticsTab projectId={project.id} />}
-        {tab === "settings" && <SettingsTab project={project} repository={repository} role={role} />}
+        {tab === "settings" && <SettingsTab project={project} repository={repository} role={role} registryLogin={registryLogin ?? null} />}
       </div>
     </div>
   );
@@ -174,7 +183,7 @@ function DeploymentActions({ d, live, canDeploy, onAct }: { d: any; live: any; c
   );
 }
 
-function OverviewTab({ live, active, url, loaded, onAct, canDeploy }: any) {
+function OverviewTab({ live, active, url, loaded, onAct, canDeploy, isImage }: any) {
   const [lines, setLines] = useState<string[]>([]);
   const cursor = useRef(0);
   const box = useRef<HTMLDivElement>(null);
@@ -219,7 +228,7 @@ function OverviewTab({ live, active, url, loaded, onAct, canDeploy }: any) {
 
   if (!active) {
     return loaded ? (
-      <EmptyState icon={Play} title="No deployments yet" description="Click Deploy to build and publish this project from its repository." />
+      <EmptyState icon={Play} title="No deployments yet" description={isImage ? "Click Deploy to pull this project's Docker image and start it." : "Click Deploy to build and publish this project from its repository."} />
     ) : (
       <div className="space-y-4" aria-busy="true">
         <Skeleton className="h-32 rounded-xl" />
@@ -493,13 +502,15 @@ function DomainsTab({ projectId, canManage }: { projectId: string; canManage: bo
   );
 }
 
-function EnvTab({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+function EnvTab({ projectId, canWrite, runtimeOnly = false }: { projectId: string; canWrite: boolean; runtimeOnly?: boolean }) {
   const toast = useToast();
   const [vars, setVars] = useState<any[] | null>(null);
   const [key, setKey] = useState("");
   const [val, setVal] = useState("");
   const [target, setTarget] = useState("all");
-  const [scope, setScope] = useState("both");
+  // Docker image projects have no build step, so their variables are always runtime variables.
+  const [scopeChoice, setScope] = useState("both");
+  const scope = runtimeOnly ? "runtime" : scopeChoice;
   const [secret, setSecret] = useState(true);
   const [bulk, setBulk] = useState("");
   const [reveal, setReveal] = useState<Set<string>>(new Set());
@@ -535,11 +546,15 @@ function EnvTab({ projectId, canWrite }: { projectId: string; canWrite: boolean 
                 <option value="production">Production</option>
                 <option value="preview">Preview</option>
               </Select>
-              <Select className="w-auto" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Used in">
-                <option value="both">Build + runtime</option>
-                <option value="build">Build only</option>
-                <option value="runtime">Runtime only</option>
-              </Select>
+              {runtimeOnly ? (
+                <Badge variant="outline">Passed to the container at runtime</Badge>
+              ) : (
+                <Select className="w-auto" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Used in">
+                  <option value="both">Build + runtime</option>
+                  <option value="build">Build only</option>
+                  <option value="runtime">Runtime only</option>
+                </Select>
+              )}
               <label className="flex items-center gap-2 text-[13px]">
                 <Switch checked={secret} onCheckedChange={setSecret} label="Sensitive" /> Sensitive
               </label>
@@ -639,11 +654,14 @@ function AnalyticsTab({ projectId }: { projectId: string }) {
   );
 }
 
-function SettingsTab({ project, repository, role }: { project: any; repository: any; role: string }) {
+function SettingsTab({ project, repository, role, registryLogin }: { project: any; repository: any; role: string; registryLogin: RegistryLogin | null }) {
   const router = useRouter();
   const toast = useToast();
+  const isImage = project.sourceType === "image";
+  const [registry, setRegistry] = useState({ username: "", password: "", remove: false });
   const [form, setForm] = useState({
     name: project.name as string,
+    image: (project.dockerImage ?? "") as string,
     rootDirectory: (project.rootDirectory ?? "") as string,
     installCommand: (project.installCommand ?? "") as string,
     buildCommand: (project.buildCommand ?? "") as string,
@@ -663,14 +681,40 @@ function SettingsTab({ project, repository, role }: { project: any; repository: 
   const isStatic = project.type === "static";
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const imageProblem = isImage ? imageReferenceError(form.image) : null;
+  const imageHost = isImage ? parseImageReference(form.image)?.registry : undefined;
+  // A saved login only ever goes to the registry it was saved for.
+  const loginMismatch = Boolean(registryLogin && imageHost && normalizeRegistryHost(registryLogin.host) !== imageHost);
+  const registryIncomplete = !registry.remove && Boolean(registry.username.trim()) !== Boolean(registry.password);
+
   const save = async () => {
     setSaving(true);
     try {
-      const body: Record<string, unknown> = { ...form, port: Number(form.port), instanceCount: Number(form.instanceCount) };
-      for (const k of ["installCommand", "buildCommand", "startCommand", "outputDirectory"]) if (body[k] === "") delete body[k];
-      if (isStatic) for (const k of ["port", "healthCheckPath", "instancePlan", "instanceCount", "startCommand"]) delete body[k];
+      let body: Record<string, unknown>;
+      if (isImage) {
+        // Image projects have no repository, build or branch: only what the container needs.
+        body = {
+          name: form.name,
+          image: form.image.trim(),
+          startCommand: form.startCommand.trim(),
+          instancePlan: form.instancePlan,
+          instanceCount: Number(form.instanceCount),
+        };
+        if (project.type === "web_service") {
+          body.port = Number(form.port) || 0; // 0 = detect from the image
+          body.healthCheckPath = form.healthCheckPath;
+        }
+        if (registry.remove) body.registry = null;
+        else if (registry.username.trim() && registry.password) body.registry = { username: registry.username.trim(), password: registry.password };
+      } else {
+        body = { ...form, port: Number(form.port), instanceCount: Number(form.instanceCount) };
+        delete body.image;
+        for (const k of ["installCommand", "buildCommand", "startCommand", "outputDirectory"]) if (body[k] === "") delete body[k];
+        if (isStatic) for (const k of ["port", "healthCheckPath", "instancePlan", "instanceCount", "startCommand"]) delete body[k];
+      }
       await api(`/api/v1/projects/${project.id}`, { method: "PATCH", body: JSON.stringify(body) });
       toast.success("Settings saved", "They apply to the next deployment.");
+      setRegistry({ username: "", password: "", remove: false });
       router.refresh();
     } catch (e) {
       toast.error("Couldn't save settings", errorMessage(e));
@@ -688,17 +732,55 @@ function SettingsTab({ project, repository, role }: { project: any; repository: 
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <Field label="Project name"><Input disabled={!editable} value={form.name} onChange={(e) => set("name", e.target.value)} /></Field>
-          <Field label="Production branch"><Input disabled={!editable} value={form.branch} onChange={(e) => set("branch", e.target.value)} /></Field>
-          <Field label="Root directory"><Input disabled={!editable} value={form.rootDirectory} onChange={(e) => set("rootDirectory", e.target.value)} placeholder="(repository root)" /></Field>
-          <Field label="Install command"><Input disabled={!editable} className="font-mono text-[13px]" value={form.installCommand} onChange={(e) => set("installCommand", e.target.value)} /></Field>
-          <Field label="Build command"><Input disabled={!editable} className="font-mono text-[13px]" value={form.buildCommand} onChange={(e) => set("buildCommand", e.target.value)} /></Field>
-          {isStatic ? (
-            <Field label="Output directory"><Input disabled={!editable} className="font-mono text-[13px]" value={form.outputDirectory} onChange={(e) => set("outputDirectory", e.target.value)} /></Field>
+          {isImage ? (
+            <>
+              <Field label="Docker image" hint="Deploy pulls this image again, so a moved tag such as latest is picked up.">
+                <Input disabled={!editable} className="font-mono text-[13px]" value={form.image} onChange={(e) => set("image", e.target.value)} spellCheck={false} aria-invalid={Boolean(imageProblem)} />
+                {imageProblem && <p className="text-xs text-destructive">{imageProblem}</p>}
+              </Field>
+              <Field label={project.type === "cron" ? "Command" : "Command override"} hint="Optional. Replaces the image's default command." className="sm:col-span-2">
+                <Input disabled={!editable} className="font-mono text-[13px]" value={form.startCommand} onChange={(e) => set("startCommand", e.target.value)} placeholder="Image default" />
+              </Field>
+            </>
           ) : (
-            <Field label="Start command"><Input disabled={!editable} className="font-mono text-[13px]" value={form.startCommand} onChange={(e) => set("startCommand", e.target.value)} /></Field>
+            <>
+              <Field label="Production branch"><Input disabled={!editable} value={form.branch} onChange={(e) => set("branch", e.target.value)} /></Field>
+              <Field label="Root directory"><Input disabled={!editable} value={form.rootDirectory} onChange={(e) => set("rootDirectory", e.target.value)} placeholder="(repository root)" /></Field>
+              <Field label="Install command"><Input disabled={!editable} className="font-mono text-[13px]" value={form.installCommand} onChange={(e) => set("installCommand", e.target.value)} /></Field>
+              <Field label="Build command"><Input disabled={!editable} className="font-mono text-[13px]" value={form.buildCommand} onChange={(e) => set("buildCommand", e.target.value)} /></Field>
+              {isStatic ? (
+                <Field label="Output directory"><Input disabled={!editable} className="font-mono text-[13px]" value={form.outputDirectory} onChange={(e) => set("outputDirectory", e.target.value)} /></Field>
+              ) : (
+                <Field label="Start command"><Input disabled={!editable} className="font-mono text-[13px]" value={form.startCommand} onChange={(e) => set("startCommand", e.target.value)} /></Field>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+
+      {isImage && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Registry login</CardTitle>
+            <CardDescription>
+              {registryLogin && !registry.remove
+                ? loginMismatch
+                  ? `The saved login (${registryLogin.username}) is for ${registryLogin.host}, so it is not used for this image. Enter a login for ${imageHost ?? "this registry"} to replace it.`
+                  : `Pulling from ${registryLogin.host} as ${registryLogin.username}. The password is stored encrypted and can't be shown — enter both fields to replace it.`
+                : "Only needed for private images or to avoid Docker Hub's anonymous pull limit."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <Field label="Username"><Input disabled={!editable || registry.remove} value={registry.username} onChange={(e) => setRegistry((r) => ({ ...r, username: e.target.value }))} autoComplete="off" /></Field>
+            <Field label="Password or access token"><Input disabled={!editable || registry.remove} type="password" value={registry.password} onChange={(e) => setRegistry((r) => ({ ...r, password: e.target.value }))} autoComplete="new-password" /></Field>
+            {registryLogin && editable && (
+              <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
+                <Switch checked={registry.remove} onCheckedChange={(v) => setRegistry((r) => ({ ...r, remove: v }))} label="Remove registry login" /> Remove the saved login
+              </label>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!isStatic && (
         <Card>
@@ -709,7 +791,9 @@ function SettingsTab({ project, repository, role }: { project: any; repository: 
           <CardContent className="grid gap-4 sm:grid-cols-2">
             {project.type === "web_service" && (
               <>
-                <Field label="Port"><Input disabled={!editable} type="number" value={form.port} onChange={(e) => set("port", Number(e.target.value))} /></Field>
+                <Field label="Port" hint={isImage ? "Leave empty to use the port the image declares (EXPOSE)." : undefined}>
+                  <Input disabled={!editable} type="number" value={form.port || ""} placeholder={isImage ? "Auto-detect" : undefined} onChange={(e) => set("port", Number(e.target.value))} />
+                </Field>
                 <Field label="Health check path"><Input disabled={!editable} className="font-mono text-[13px]" value={form.healthCheckPath} onChange={(e) => set("healthCheckPath", e.target.value)} /></Field>
               </>
             )}
@@ -728,6 +812,7 @@ function SettingsTab({ project, repository, role }: { project: any; repository: 
         </Card>
       )}
 
+      {!isImage && (
       <Card>
         <CardHeader>
           <CardTitle>Git</CardTitle>
@@ -754,6 +839,16 @@ function SettingsTab({ project, repository, role }: { project: any; repository: 
           </Button>
         </CardFooter>
       </Card>
+      )}
+
+      {isImage && (
+        <div className="flex items-center justify-end gap-3">
+          {registryIncomplete && <span className="text-xs text-warning">Enter both the registry username and password.</span>}
+          <Button onClick={save} loading={saving} disabled={!editable || Boolean(imageProblem) || !form.image.trim() || registryIncomplete}>
+            Save changes
+          </Button>
+        </div>
+      )}
 
       {(role === "admin" || role === "owner") && (
         <Card className="border-destructive/30">

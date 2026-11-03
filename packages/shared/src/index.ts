@@ -3,6 +3,7 @@ export * from './plans';
 export * from './notifications';
 export * from './slug';
 export * from './env';
+export * from './image';
 export * from './detect';
 export * from './orbconfig';
 export * from './permissions';

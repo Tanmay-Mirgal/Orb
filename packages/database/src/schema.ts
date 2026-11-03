@@ -245,6 +245,10 @@ export const projects = pgTable(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     /** static | web_service | worker | cron */
     type: varchar('type', { length: 32 }).notNull().default('static'),
+    /** git (clone + build a repository) | image (pull a prebuilt Docker image) */
+    sourceType: varchar('source_type', { length: 16 }).notNull().default('git'),
+    /** Image reference for `image` projects, e.g. `ghcr.io/acme/api:1.4`. */
+    dockerImage: varchar('docker_image', { length: 255 }),
     framework: varchar('framework', { length: 255 }),
     buildCommand: varchar('build_command', { length: 255 }),
     outputDirectory: varchar('output_directory', { length: 255 }),
@@ -282,6 +286,25 @@ export const projectRepositories = pgTable('project_repositories', {
   branch: varchar('branch', { length: 255 }).default('main').notNull(),
   /** GitHub App installation used to clone private repositories (falls back to the owner's OAuth token). */
   installationId: bigint('installation_id', { mode: 'number' }),
+});
+
+/**
+ * Login for the private registry an `image` project pulls from. Kept out of `projects` on purpose: project rows are
+ * returned by the API and serialized into pages, so a secret column there would leak with every `select()`.
+ */
+export const projectRegistryCredentials = pgTable('project_registry_credentials', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  /**
+   * Registry host the login belongs to (`ghcr.io`, `docker.io`, ...). It is only ever presented to that host, so
+   * pointing the project's image at another registry cannot make the worker hand the secret to it.
+   */
+  registry: varchar('registry', { length: 255 }).notNull(),
+  username: varchar('username', { length: 255 }).notNull(),
+  /** AES-256-GCM envelope (see core/crypto), bound to the project id. */
+  password: text('password').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const deployments = pgTable(
@@ -423,6 +446,7 @@ export type Organization = typeof organizations.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type ProjectRepository = typeof projectRepositories.$inferSelect;
+export type ProjectRegistryCredentials = typeof projectRegistryCredentials.$inferSelect;
 export type Deployment = typeof deployments.$inferSelect;
 export type Instance = typeof instances.$inferSelect;
 export type Domain = typeof domains.$inferSelect;

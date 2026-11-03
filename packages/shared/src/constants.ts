@@ -42,6 +42,13 @@ export const PROJECT_TYPES: readonly ProjectType[] = ['static', 'web_service', '
 /** Project types that run in a container and therefore need an image + runner. */
 export const CONTAINER_PROJECT_TYPES: readonly ProjectType[] = ['web_service', 'worker', 'cron'];
 
+/** Where a project's code comes from: built from a Git repository, or a prebuilt Docker image pulled from a registry. */
+export const ProjectSource = {
+  GIT: 'git',
+  IMAGE: 'image',
+} as const;
+export type ProjectSource = (typeof ProjectSource)[keyof typeof ProjectSource];
+
 export const DeploymentEnvironment = {
   PRODUCTION: 'production',
   PREVIEW: 'preview',

@@ -51,6 +51,7 @@ import {
   type GeneratedBuild,
 } from './dockerfiles';
 import { cloneRepository } from './git';
+import { loadRegistryLogin, pullImage, resolveImagePort } from './image';
 import { runCommand } from './process';
 import { loadOrbConfig, publishStaticSite } from './publish';
 
@@ -77,7 +78,8 @@ function fsProbe(root: string): FileProbe {
 interface Loaded {
   deployment: Deployment;
   project: Project;
-  repository: ProjectRepository;
+  /** Absent for Docker image projects. */
+  repository: ProjectRepository | null;
   org: Organization;
 }
 
@@ -86,7 +88,7 @@ async function load(db: Database, deploymentId: string): Promise<Loaded | null> 
     .select({ deployment: deployments, project: projects, repository: projectRepositories, org: organizations })
     .from(deployments)
     .innerJoin(projects, eq(projects.id, deployments.projectId))
-    .innerJoin(projectRepositories, eq(projectRepositories.projectId, projects.id))
+    .leftJoin(projectRepositories, eq(projectRepositories.projectId, projects.id))
     .innerJoin(organizations, eq(organizations.id, projects.orgId))
     .where(eq(deployments.id, deploymentId))
     .limit(1);
@@ -115,6 +117,8 @@ async function resolveGitToken(ctx: WorkerContext, project: Project, repository:
 function snapshotFromProject(project: Project): DeploymentConfig {
   return {
     type: project.type as ProjectType,
+    source: project.sourceType === 'image' ? 'image' : 'git',
+    image: project.dockerImage,
     framework: project.framework,
     rootDirectory: project.rootDirectory ?? '',
     installCommand: project.installCommand,
@@ -202,6 +206,16 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
     fs.mkdirSync(workspace, { recursive: true });
     log.line(`[orb] Deployment ${deployment.id.slice(0, 8)} for ${project.name} (${deployment.environment})`);
 
+    const config = deployment.config ?? snapshotFromProject(project);
+    const environment = deployment.environment === 'preview' ? 'preview' : 'production';
+
+    // Docker image projects skip clone/detect/build: the image is pulled and handed straight to the scheduler.
+    if (config.source === 'image') {
+      await deployImage({ ctx, deployment, project, config, environment, log, signal: abort.signal, timeoutMs: plan.buildTimeoutSec * 1000, scratchDir: secretDir });
+      return;
+    }
+    if (!repository) throw new Error('Project has no connected repository');
+
     // 1. Source ----------------------------------------------------------------------------------------------
     const gitToken = await resolveGitToken(ctx, project, repository);
     log.line(`[git] Cloning ${repository.githubRepositoryName}@${deployment.branch ?? repository.branch}${gitToken ? '' : ' (anonymous)'}`);
@@ -225,7 +239,6 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
       .where(eq(deployments.id, deployment.id));
 
     // 2. Configuration ---------------------------------------------------------------------------------------
-    const config = deployment.config ?? snapshotFromProject(project);
     const rootDirectory = normalizeRelativeDir(config.rootDirectory);
     if (rootDirectory === null) throw new Error('Invalid root directory');
     if (!fs.existsSync(path.join(workspace, rootDirectory))) {
@@ -235,7 +248,6 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
     for (const note of detection.notes) log.line(`[detect] ${note}`);
     log.line(`[detect] ${detection.frameworkName} (${detection.runtime})`);
     const eff = effective(config, detection);
-    const environment = deployment.environment === 'preview' ? 'preview' : 'production';
 
     const buildEnv = await resolveEnvVars(db, project.id, { environment, scope: 'build' });
     const runtimeEnv = await resolveEnvVars(db, project.id, { environment, scope: 'runtime' });
@@ -351,6 +363,77 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
     fs.rmSync(workspace, { recursive: true, force: true });
     fs.rmSync(secretDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Deployment of a prebuilt Docker image: pull it (checking size and architecture), keep it under an Orb tag,
+ * push it to the platform registry when there is one, then queue the release. Runtime variables are applied by the
+ * runner when the container starts, so there is nothing to bake in and no build step.
+ */
+async function deployImage(args: {
+  ctx: WorkerContext;
+  deployment: Deployment;
+  project: Project;
+  config: DeploymentConfig;
+  environment: 'production' | 'preview';
+  log: BuildLog;
+  signal: AbortSignal;
+  timeoutMs: number;
+  scratchDir: string;
+}): Promise<void> {
+  const { ctx, deployment, project, config, environment, log, signal, timeoutMs } = args;
+  if (config.type === 'static') throw new Error('Static sites cannot be deployed from a Docker image');
+  if (!config.image) throw new Error('Project has no Docker image configured');
+
+  const runtimeEnv = await resolveEnvVars(ctx.db, project.id, { environment, scope: 'runtime' });
+  const login = await loadRegistryLogin(ctx.db, project.id, config.image, log.line);
+  log.setSecrets([...runtimeEnv.secretValues, ...(login ? [login.password] : [])]);
+  log.line(`[docker] Pulling ${config.image}${login ? ` (as ${login.username})` : ''}`);
+
+  const tag = imageTag(ctx.config.registry, project.id, deployment.id);
+  const pulled = await pullImage({
+    image: config.image,
+    login,
+    tag,
+    platformRegistry: ctx.config.registry,
+    maxBytes: ctx.config.maxImageBytes,
+    timeoutMs,
+    scratchDir: args.scratchDir,
+    onLine: log.line,
+    signal,
+  });
+  log.line(`[docker] Pulled ${config.image} (${(pulled.sizeBytes / 1024 / 1024).toFixed(0)} MB${pulled.digest ? `, sha256:${pulled.digest.slice(0, 12)}` : ''})`);
+  log.line(`[env] ${Object.keys(runtimeEnv.vars).length} runtime variable(s) will be passed to the container`);
+
+  let port = config.port;
+  if (config.type === 'web_service') {
+    const resolved = resolveImagePort(config.port, pulled.exposedPorts);
+    port = resolved.port;
+    log.line(`[detect] ${resolved.note}`);
+  }
+
+  if (ctx.config.registry) {
+    log.line(`[docker] Pushing ${tag}…`);
+    const pushCode = await runCommand('docker', ['push', tag], { onLine: log.line, signal, timeoutMs: 15 * 60_000 });
+    assertBuildExit(pushCode, signal, 15 * 60_000);
+  }
+
+  const [updated] = await ctx.db
+    .update(deployments)
+    .set({
+      status: DeploymentStatus.DEPLOYING,
+      imageRef: tag,
+      commitHash: pulled.digest,
+      // The snapshot keeps the port that was resolved, so rollbacks and rescheduling use the same one.
+      config: { ...config, port },
+      buildFinishedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
+    .returning({ id: deployments.id });
+  if (!updated) throw new CanceledError();
+  await enqueueRelease(ctx.releaseQueue, deployment.id, environment === 'production');
+  log.line('[orb] Image ready. Handing over to the scheduler…');
 }
 
 function assertBuildExit(code: number, signal: AbortSignal, timeoutMs: number) {
