@@ -11,3 +11,4 @@ export * from './dns';
 export * from './github';
 export * from './mailer';
 export * from './email-templates';
+export * from './connector';

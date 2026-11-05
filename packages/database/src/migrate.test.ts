@@ -24,9 +24,50 @@ describe('migrations', () => {
     for (const expected of [
       'organizations', 'memberships', 'projects', 'deployments', 'instances',
       'domains', 'environment_variables', 'api_tokens', 'audit_logs', 'usage_hourly',
+      'connector_grants', 'connector_codes', 'connector_used_refresh', 'connector_webhooks',
+      'connector_events', 'connector_deliveries', 'connector_operations', 'connector_idempotency',
     ]) {
       expect(tables).toContain(expected);
     }
+  });
+
+  it('add the connector columns without touching existing rows (0005)', async () => {
+    const client = new PGlite();
+    await migrate(drizzle(client), { migrationsFolder: MIGRATIONS_FOLDER });
+    const columns = async (table: string) =>
+      (await client.query<{ column_name: string }>(`select column_name from information_schema.columns where table_name = '${table}'`)).rows.map((r) => r.column_name);
+    expect(await columns('projects')).toEqual(expect.arrayContaining(['metadata', 'external_ref', 'created_via']));
+    expect(await columns('deployments')).toEqual(expect.arrayContaining(['metadata', 'external_ref', 'created_via']));
+    expect(await columns('audit_logs')).toEqual(expect.arrayContaining(['via', 'client_id', 'grant_id', 'request_id']));
+  });
+
+  it('give the connector event log a commit-ordered cursor (xid8)', async () => {
+    const client = new PGlite();
+    await migrate(drizzle(client), { migrationsFolder: MIGRATIONS_FOLDER });
+    await client.exec(`
+      INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES ('u1', 'Ada', 'ada@example.com', true, now(), now());
+      INSERT INTO organizations (id, name, slug) VALUES ('11111111-1111-1111-1111-111111111111', 'Acme', 'acme');
+    `);
+    await client.exec(`
+      INSERT INTO connector_events (id, org_id, type, occurred_at, payload)
+        VALUES ('evt_A', '11111111-1111-1111-1111-111111111111', 'project.created', now(), '{}'),
+               ('evt_B', '11111111-1111-1111-1111-111111111111', 'project.updated', now(), '{}');
+    `);
+    // Readers only see rows whose transaction can no longer be in flight, in (tx_id, seq) order.
+    const visible = await client.query<{ id: string; seq: number }>(`
+      SELECT id, seq FROM connector_events
+      WHERE org_id = '11111111-1111-1111-1111-111111111111'
+        AND tx_id < pg_snapshot_xmin(pg_current_snapshot())
+      ORDER BY tx_id, seq`);
+    expect(visible.rows.map((r) => r.id)).toEqual(['evt_A', 'evt_B']);
+    expect(Number(visible.rows[1]!.seq)).toBeGreaterThan(Number(visible.rows[0]!.seq));
+
+    // A rolled-back change leaves no event behind (the outbox shares the transaction).
+    await client.exec('BEGIN');
+    await client.exec(`INSERT INTO connector_events (id, org_id, type, occurred_at, payload) VALUES ('evt_C', '11111111-1111-1111-1111-111111111111', 'x.y', now(), '{}')`);
+    await client.exec('ROLLBACK');
+    const all = await client.query(`SELECT id FROM connector_events ORDER BY seq`);
+    expect(all.rows.map((r) => (r as { id: string }).id)).toEqual(['evt_A', 'evt_B']);
   });
 
   it('upgrade a legacy v1 database (with data) and are safe to re-run', async () => {

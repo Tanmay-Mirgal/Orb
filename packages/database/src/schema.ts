@@ -1,7 +1,10 @@
+import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   bigint,
+  bigserial,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -13,7 +16,14 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { DeploymentConfig } from 'shared';
+import type { DeploymentConfig, ExternalRef } from 'shared';
+
+/** Postgres transaction id (64-bit). Used to read the connector event log in commit order. */
+const xid8 = customType<{ data: string }>({
+  dataType() {
+    return 'xid8';
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Authentication (Better Auth). Table/column names are dictated by the library.
@@ -134,9 +144,14 @@ export const auditLogs = pgTable(
     targetId: varchar('target_id', { length: 255 }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
     ip: varchar('ip', { length: 64 }),
+    /** `connector` for calls made through the ecosystem connector; null for the dashboard / API tokens. */
+    via: varchar('via', { length: 16 }),
+    clientId: varchar('client_id', { length: 128 }),
+    grantId: uuid('grant_id'),
+    requestId: varchar('request_id', { length: 64 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
-  (t) => [index('audit_logs_org_created_idx').on(t.orgId, t.createdAt)],
+  (t) => [index('audit_logs_org_created_idx').on(t.orgId, t.createdAt), index('audit_logs_grant_idx').on(t.grantId, t.createdAt)],
 );
 
 // ---------------------------------------------------------------------------
@@ -269,6 +284,12 @@ export const projects = pgTable(
     currentDeploymentId: uuid('current_deployment_id').references((): AnyPgColumn => deployments.id, {
       onDelete: 'set null',
     }),
+    /** Caller-defined data stored by the ecosystem connector (≤ 2 KB). */
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    /** Hub correlation ids, echoed in every connector event about this project and its deployments. */
+    externalRef: jsonb('external_ref').$type<ExternalRef>(),
+    /** `connector` when created through the ecosystem connector. */
+    createdVia: varchar('created_via', { length: 16 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -334,6 +355,9 @@ export const deployments = pgTable(
     buildStartedAt: timestamp('build_started_at'),
     buildFinishedAt: timestamp('build_finished_at'),
     readyAt: timestamp('ready_at'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    externalRef: jsonb('external_ref').$type<ExternalRef>(),
+    createdVia: varchar('created_via', { length: 16 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -441,7 +465,220 @@ export const usageHourly = pgTable(
   (t) => [primaryKey({ columns: [t.projectId, t.bucket] })],
 );
 
+// ---------------------------------------------------------------------------
+// Ecosystem connector (CP1). Everything below is unused unless CONNECTOR_ENABLED=true.
+// ---------------------------------------------------------------------------
+
+/** One user's consent for one team: the token family. Tokens are stored as HMAC-SHA256(pepper, token) only. */
+export const connectorGrants = pgTable(
+  'connector_grants',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    clientId: varchar('client_id', { length: 128 }).notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    scopes: text('scopes').array().notNull(),
+    accessHash: varchar('access_hash', { length: 64 }).notNull(),
+    accessExpiresAt: timestamp('access_expires_at').notNull(),
+    refreshHash: varchar('refresh_hash', { length: 64 }).notNull(),
+    refreshFamilyId: uuid('refresh_family_id').defaultRandom().notNull(),
+    refreshExpiresAt: timestamp('refresh_expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    revokedAt: timestamp('revoked_at'),
+    /** user | admin | client | reuse_detected | code_reuse | membership_lost */
+    revokeReason: varchar('revoke_reason', { length: 32 }),
+  },
+  (t) => [
+    uniqueIndex('connector_grants_access_hash_idx').on(t.accessHash),
+    uniqueIndex('connector_grants_refresh_hash_idx').on(t.refreshHash),
+    index('connector_grants_user_idx').on(t.userId),
+    index('connector_grants_org_idx').on(t.orgId),
+  ],
+);
+
+/** Refresh tokens that were already rotated: presenting one again means the token family was stolen. */
+export const connectorUsedRefresh = pgTable(
+  'connector_used_refresh',
+  {
+    refreshHash: varchar('refresh_hash', { length: 64 }).primaryKey(),
+    grantId: uuid('grant_id')
+      .notNull()
+      .references(() => connectorGrants.id, { onDelete: 'cascade' }),
+    usedAt: timestamp('used_at').defaultNow().notNull(),
+  },
+  (t) => [index('connector_used_refresh_grant_idx').on(t.grantId)],
+);
+
+/** Single-use authorization codes (60 s). The code itself is only stored hashed. */
+export const connectorCodes = pgTable(
+  'connector_codes',
+  {
+    codeHash: varchar('code_hash', { length: 64 }).primaryKey(),
+    clientId: varchar('client_id', { length: 128 }).notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    scopes: text('scopes').array().notNull(),
+    redirectUri: text('redirect_uri').notNull(),
+    codeChallenge: varchar('code_challenge', { length: 128 }).notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    usedAt: timestamp('used_at'),
+    /** Set when the code is exchanged: a second use revokes this grant. */
+    grantId: uuid('grant_id').references(() => connectorGrants.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('connector_codes_expires_idx').on(t.expiresAt)],
+);
+
+export const connectorWebhooks = pgTable(
+  'connector_webhooks',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    grantId: uuid('grant_id')
+      .notNull()
+      .references(() => connectorGrants.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    /** Exact event types and `prefix.*` patterns. */
+    eventFilter: text('event_filter').array().notNull(),
+    description: varchar('description', { length: 255 }),
+    /** AES-256-GCM envelope (CONNECTOR_ENCRYPTION_KEY), bound to the webhook id. */
+    secretEnc: text('secret_enc').notNull(),
+    /** active | disabled */
+    status: varchar('status', { length: 16 }).notNull().default('active'),
+    disabledReason: varchar('disabled_reason', { length: 64 }),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    /** Start of the current run of failures (disables the endpoint after 3 days). */
+    failingSince: timestamp('failing_since'),
+    lastDeliveryAt: timestamp('last_delivery_at'),
+    lastDeliveryStatus: varchar('last_delivery_status', { length: 16 }),
+    lastResponseCode: integer('last_response_code'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('connector_webhooks_grant_idx').on(t.grantId), index('connector_webhooks_org_status_idx').on(t.orgId, t.status)],
+);
+
+/** Transactional outbox AND the tenant's event log (`GET /events`). Written in the same transaction as the change. */
+export const connectorEvents = pgTable(
+  'connector_events',
+  {
+    /** `evt_<ULID>` */
+    id: text('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 64 }).notNull(),
+    occurredAt: timestamp('occurred_at').notNull(),
+    /** The complete envelope that is sent to webhooks and returned by the event log. */
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    externalRef: jsonb('external_ref').$type<ExternalRef>(),
+    /** Monotonic position; the polling cursor is (tx_id, seq) so readers never skip a late-committing row. */
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
+    txId: xid8('tx_id').notNull().default(sql`pg_current_xact_id()`),
+    /** Null until the dispatcher has fanned the event out to the matching webhook endpoints. */
+    dispatchedAt: timestamp('dispatched_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('connector_events_seq_idx').on(t.seq),
+    index('connector_events_org_order_idx').on(t.orgId, t.txId, t.seq),
+    index('connector_events_pending_idx').on(t.seq).where(sql`dispatched_at IS NULL`),
+    index('connector_events_created_idx').on(t.createdAt),
+  ],
+);
+
+export const connectorDeliveries = pgTable(
+  'connector_deliveries',
+  {
+    /** Sent as `X-CP-Delivery`; stable across retries. */
+    id: uuid('id').defaultRandom().primaryKey(),
+    eventId: text('event_id')
+      .notNull()
+      .references(() => connectorEvents.id, { onDelete: 'cascade' }),
+    webhookId: uuid('webhook_id')
+      .notNull()
+      .references(() => connectorWebhooks.id, { onDelete: 'cascade' }),
+    /** Attempts made so far. */
+    attempt: integer('attempt').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at'),
+    /** pending | delivering | succeeded | failed (will retry) | abandoned */
+    status: varchar('status', { length: 16 }).notNull().default('pending'),
+    responseCode: integer('response_code'),
+    responseExcerpt: text('response_excerpt'),
+    lastError: varchar('last_error', { length: 255 }),
+    /** Lease while a worker is delivering, so a crashed worker's delivery is picked up again. */
+    lockedUntil: timestamp('locked_until'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deliveredAt: timestamp('delivered_at'),
+  },
+  (t) => [
+    uniqueIndex('connector_deliveries_event_webhook_idx').on(t.eventId, t.webhookId),
+    index('connector_deliveries_due_idx').on(t.status, t.nextAttemptAt),
+    index('connector_deliveries_webhook_idx').on(t.webhookId, t.createdAt),
+  ],
+);
+
+export const connectorOperations = pgTable(
+  'connector_operations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    grantId: uuid('grant_id')
+      .notNull()
+      .references(() => connectorGrants.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    action: varchar('action', { length: 64 }).notNull(),
+    /** pending | running | succeeded | failed | canceled */
+    status: varchar('status', { length: 16 }).notNull().default('pending'),
+    input: jsonb('input').$type<Record<string, unknown>>().notNull(),
+    output: jsonb('output').$type<Record<string, unknown>>(),
+    error: jsonb('error').$type<Record<string, unknown>>(),
+    deadlineAt: timestamp('deadline_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    finishedAt: timestamp('finished_at'),
+  },
+  (t) => [index('connector_operations_grant_idx').on(t.grantId, t.createdAt), index('connector_operations_open_idx').on(t.status)],
+);
+
+export const connectorIdempotency = pgTable(
+  'connector_idempotency',
+  {
+    grantId: uuid('grant_id')
+      .notNull()
+      .references(() => connectorGrants.id, { onDelete: 'cascade' }),
+    key: varchar('key', { length: 128 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    /** processing | done */
+    state: varchar('state', { length: 12 }).notNull().default('processing'),
+    status: integer('status'),
+    response: jsonb('response').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.grantId, t.key] }), index('connector_idempotency_expires_idx').on(t.expiresAt)],
+);
+
 export type User = typeof users.$inferSelect;
+export type ConnectorGrant = typeof connectorGrants.$inferSelect;
+export type ConnectorCode = typeof connectorCodes.$inferSelect;
+export type ConnectorWebhook = typeof connectorWebhooks.$inferSelect;
+export type ConnectorEvent = typeof connectorEvents.$inferSelect;
+export type ConnectorDelivery = typeof connectorDeliveries.$inferSelect;
+export type ConnectorOperation = typeof connectorOperations.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Project = typeof projects.$inferSelect;

@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { bullConnection, createMetrics, loadEnv, startOpsServer } from 'core';
+import { assertConnectorConfig, bullConnection, createMetrics, loadEnv, startOpsServer } from 'core';
 import { sql } from 'database';
 import { QUEUES } from 'shared';
 import { runBuildJob } from './build/pipeline';
@@ -11,6 +11,7 @@ import { runReleaseJob } from './orchestrator/release';
 loadEnv();
 
 async function main() {
+  assertConnectorConfig(); // no-op unless CONNECTOR_ENABLED=true; then every CONNECTOR_* variable must be valid
   const ctx = createContext();
   const { logger, config, redis } = ctx;
   logger.info('Orb worker starting');

@@ -10,3 +10,4 @@ export * from './permissions';
 export * from './schemas';
 export * from './jobs';
 export * from './metrics';
+export * from './connector';
