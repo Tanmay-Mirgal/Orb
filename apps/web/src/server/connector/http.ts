@@ -1,6 +1,7 @@
-import { ZodError } from 'zod';
+import { ZodError, type ZodType } from 'zod';
 import { connectorEnabled, newRequestId, platformConfig } from 'core';
 import {
+  CONNECTOR_LIMITS,
   ConnectorError,
   cpForbidden,
   cpNotFound,
@@ -87,7 +88,7 @@ export function toConnectorError(err: unknown): ConnectorError {
     if (err.status === 403) return cpForbidden(err.message);
     if (err.status === 404) return cpNotFound(err.message.replace(/ not found$/i, ''));
     const code = BY_STATUS[err.status] ?? (err.status >= 500 ? 'internal' : 'validation_failed');
-    return new ConnectorError(code, err.message, { status: code === 'validation_failed' && err.status === 413 ? 413 : undefined });
+    return new ConnectorError(code, err.message);
   }
   return new ConnectorError('internal', 'Internal error');
 }
@@ -105,8 +106,8 @@ export function jsonResponse(body: unknown, init: { status?: number; headers?: R
   });
 }
 
-export function errorResponse(error: ConnectorError, requestId: string): Response {
-  return jsonResponse(error.toBody(requestId), { status: error.status, headers: error.headers }, requestId);
+export function errorResponse(error: ConnectorError, requestId: string, extraHeaders: Record<string, string> = {}): Response {
+  return jsonResponse(error.toBody(requestId), { status: error.status, headers: { ...extraHeaders, ...error.headers } }, requestId);
 }
 
 /** One structured log line per unexpected failure: never the request body, headers or tokens. */
@@ -128,6 +129,8 @@ export interface ConnectContext<P> {
   req: Request;
   params: P;
   requestId: string;
+  /** Added to the response whatever happens (rate-limit headers are set here before a 429 is thrown). */
+  responseHeaders: Record<string, string>;
 }
 
 type RouteHandlerContext<P> = { params: Promise<P> };
@@ -139,19 +142,45 @@ export function connectRoute<P extends Record<string, string> = Record<string, n
   return async (req: Request, routeCtx?: RouteHandlerContext<P>): Promise<Response> => {
     const requestId = requestIdOf(req);
     if (!connectorEnabled()) return errorResponse(cpNotFound('Route'), requestId);
+    const responseHeaders: Record<string, string> = {};
     try {
       const params = (routeCtx ? await routeCtx.params : {}) as P;
-      const result = await handler({ req, params, requestId });
+      const result = await handler({ req, params, requestId, responseHeaders });
       if (result instanceof Response) {
         result.headers.set('x-request-id', requestId);
+        for (const [k, v] of Object.entries(responseHeaders)) result.headers.set(k, v);
         return result;
       }
-      if (result instanceof ConnectResponse) return jsonResponse(result.body, result.init, requestId);
-      return jsonResponse(result ?? { ok: true }, undefined, requestId);
+      if (result instanceof ConnectResponse) {
+        return jsonResponse(result.body, { status: result.init.status, headers: { ...responseHeaders, ...result.init.headers } }, requestId);
+      }
+      return jsonResponse(result ?? { ok: true }, { headers: responseHeaders }, requestId);
     } catch (err) {
       const mapped = toConnectorError(err);
       if (mapped.code === 'internal') logUnexpected(err, requestId, req);
-      return errorResponse(mapped, requestId);
+      return errorResponse(mapped, requestId, responseHeaders);
     }
   };
+}
+
+/** Reads the body once, enforcing `limits.maxBodyBytes` (413) before and after buffering. */
+export async function readBodyText(req: Request, maxBytes: number = CONNECTOR_LIMITS.maxBodyBytes): Promise<string> {
+  const declared = Number(req.headers.get('content-length') ?? 0);
+  const tooLarge = () => new ConnectorError('validation_failed', `Request body must be at most ${maxBytes} bytes`, { status: 413 });
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+  const text = await req.text();
+  if (Buffer.byteLength(text) > maxBytes) throw tooLarge();
+  return text;
+}
+
+/** Parses a JSON body with a (strict) zod schema; an empty body is `{}`. */
+export async function readJson<T>(req: Request, schema: ZodType<T>): Promise<T> {
+  const text = await readBodyText(req);
+  let json: unknown;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    throw cpValidation('Request body must be valid JSON');
+  }
+  return schema.parse(json);
 }

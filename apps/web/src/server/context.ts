@@ -20,9 +20,11 @@ export interface AuthContext {
   userId: string;
   userName: string;
   email: string;
-  via: 'session' | 'token';
+  via: 'session' | 'token' | 'connector';
   tokenId?: string;
   ip: string | null;
+  /** Set only for calls made through the ecosystem connector (see server/connector/auth). */
+  connector?: { grantId: string; clientId: string; requestId: string };
 }
 
 function readCookie(req: Request, name: string): string | null {

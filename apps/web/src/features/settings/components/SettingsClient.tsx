@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, KeyRound, Laptop, LogOut, Moon, Palette, Sun, User } from "lucide-react";
+import { Bell, KeyRound, Laptop, LogOut, Moon, Palette, Plug, Sun, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut, useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -11,28 +11,32 @@ import { Field, Input } from "@/components/ui/input";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/app/page";
 import { useTheme, type ThemeChoice } from "@/components/app/theme";
+import { ConnectedAppsSection } from "./ConnectedAppsSection";
 import { NotificationsSection } from "./NotificationsSection";
 import { TokensSection } from "./TokensSection";
 
-type Tab = "profile" | "notifications" | "tokens" | "appearance";
+type Tab = "profile" | "notifications" | "tokens" | "connected" | "appearance";
 const TABS: TabItem<Tab>[] = [
   { id: "profile", label: "Profile", icon: User },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "tokens", label: "API tokens", icon: KeyRound },
+  { id: "connected", label: "Connected apps", icon: Plug },
   { id: "appearance", label: "Appearance", icon: Palette },
 ];
 
-export function SettingsClient() {
+/** `connector` is null while the ecosystem connector is switched off: the tab is then not shown at all. */
+export function SettingsClient({ connector = null }: { connector?: { hubName: string } | null }) {
   const { data: session } = useSession();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [tab, setTab] = useState<Tab>("profile");
   const user = session?.user;
+  const tabs = connector ? TABS : TABS.filter((t) => t.id !== "connected");
 
   return (
     <div className="animate-fade-up max-w-3xl space-y-6">
       <PageHeader title="Settings" description="Your account, API access and preferences." />
-      <Tabs tabs={TABS} value={tab} onChange={setTab} />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
       {tab === "profile" && (
         <Card>
@@ -66,6 +70,8 @@ export function SettingsClient() {
       {tab === "notifications" && <NotificationsSection email={user?.email} />}
 
       {tab === "tokens" && <TokensSection />}
+
+      {tab === "connected" && connector && <ConnectedAppsSection hubName={connector.hubName} />}
 
       {tab === "appearance" && (
         <Card>

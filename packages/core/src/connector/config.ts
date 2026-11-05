@@ -5,6 +5,11 @@ export function connectorEnabled(): boolean {
   return envBool('CONNECTOR_ENABLED', false);
 }
 
+/** Name of the connected app on the consent screen and in "via …" tags. Safe to call without full configuration. */
+export function connectorHubName(): string {
+  return env('CONNECTOR_HUB_NAME') ?? 'Hub';
+}
+
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** https everywhere; plain http only for localhost and only outside production. */
