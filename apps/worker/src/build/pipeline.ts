@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DelayedError, type Job } from 'bullmq';
 import {
+  connectorEnabled,
   deploymentUrl,
   enqueueRelease,
   getInstallationToken,
@@ -13,6 +14,7 @@ import {
   and,
   count,
   deployments,
+  emitDeploymentEvent,
   eq,
   inArray,
   organizations,
@@ -20,6 +22,7 @@ import {
   projects,
   accounts,
   resolveEnvVars,
+  withOutbox,
   type Database,
   type Deployment,
   type Project,
@@ -185,11 +188,16 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
     throw new DelayedError();
   }
 
-  const claimed = await db
-    .update(deployments)
-    .set({ status: DeploymentStatus.BUILDING, buildStartedAt: new Date(), updatedAt: new Date(), errorMessage: null })
-    .where(and(eq(deployments.id, deployment.id), inArray(deployments.status, [DeploymentStatus.QUEUED, DeploymentStatus.BUILDING])))
-    .returning({ id: deployments.id });
+  const claimed = await withOutbox(db, async (tx) => {
+    const rows = await tx
+      .update(deployments)
+      .set({ status: DeploymentStatus.BUILDING, buildStartedAt: new Date(), updatedAt: new Date(), errorMessage: null })
+      .where(and(eq(deployments.id, deployment.id), inArray(deployments.status, [DeploymentStatus.QUEUED, DeploymentStatus.BUILDING])))
+      .returning({ id: deployments.id });
+    // Only the QUEUED -> BUILDING transition is an event; picking a build up again after a restart is not.
+    if (rows.length > 0 && deployment.status === DeploymentStatus.QUEUED) await emitDeploymentEvent(tx, deployment.id, 'building');
+    return rows;
+  });
   if (claimed.length === 0) return;
 
   const log = new BuildLog(ctx.logs, deployment.id);
@@ -330,11 +338,15 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
         assertBuildExit(pushCode, abort.signal, 15 * 60_000);
       }
 
-      const [updated] = await db
-        .update(deployments)
-        .set({ status: DeploymentStatus.DEPLOYING, imageRef: tag, buildFinishedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
-        .returning({ id: deployments.id });
+      const updated = await withOutbox(db, async (tx) => {
+        const [row] = await tx
+          .update(deployments)
+          .set({ status: DeploymentStatus.DEPLOYING, imageRef: tag, buildFinishedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
+          .returning({ id: deployments.id });
+        if (row) await emitDeploymentEvent(tx, deployment.id, 'deploying');
+        return row;
+      });
       if (!updated) throw new CanceledError();
       if (type === 'cron' || type === 'web_service' || type === 'worker') {
         await enqueueRelease(ctx.releaseQueue, deployment.id, environment === 'production');
@@ -346,15 +358,20 @@ export async function runBuildJob(ctx: WorkerContext, job: Job<BuildJob>, token?
     const message = canceled ? 'Build canceled' : err instanceof Error ? err.message : String(err);
     log.line(`[error] ${message}`);
     if (!canceled) ctx.logger.warn({ deploymentId: deployment.id, err: message }, 'build failed');
-    await db
-      .update(deployments)
-      .set({
-        status: canceled ? DeploymentStatus.CANCELED : DeploymentStatus.FAILED,
-        errorMessage: message.slice(0, 2000),
-        buildFinishedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(deployments.id, deployment.id), inArray(deployments.status, [DeploymentStatus.BUILDING, DeploymentStatus.DEPLOYING, DeploymentStatus.QUEUED])));
+    await withOutbox(db, async (tx) => {
+      const rows = await tx
+        .update(deployments)
+        .set({
+          status: canceled ? DeploymentStatus.CANCELED : DeploymentStatus.FAILED,
+          errorMessage: message.slice(0, 2000),
+          buildFinishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(deployments.id, deployment.id), inArray(deployments.status, [DeploymentStatus.BUILDING, DeploymentStatus.DEPLOYING, DeploymentStatus.QUEUED])))
+        .returning({ id: deployments.id });
+      // A cancel requested through the API already wrote (and announced) CANCELED: announce only what this statement changed.
+      if (rows.length > 0) await emitDeploymentEvent(tx, deployment.id, canceled ? 'canceled' : 'failed');
+    });
     if (!canceled) await notifyDeployment(ctx, deployment.id, 'failed');
   } finally {
     clearInterval(cancelWatcher);
@@ -418,19 +435,23 @@ async function deployImage(args: {
     assertBuildExit(pushCode, signal, 15 * 60_000);
   }
 
-  const [updated] = await ctx.db
-    .update(deployments)
-    .set({
-      status: DeploymentStatus.DEPLOYING,
-      imageRef: tag,
-      commitHash: pulled.digest,
-      // The snapshot keeps the port that was resolved, so rollbacks and rescheduling use the same one.
-      config: { ...config, port },
-      buildFinishedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
-    .returning({ id: deployments.id });
+  const updated = await withOutbox(ctx.db, async (tx) => {
+    const [row] = await tx
+      .update(deployments)
+      .set({
+        status: DeploymentStatus.DEPLOYING,
+        imageRef: tag,
+        commitHash: pulled.digest,
+        // The snapshot keeps the port that was resolved, so rollbacks and rescheduling use the same one.
+        config: { ...config, port },
+        buildFinishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
+      .returning({ id: deployments.id });
+    if (row) await emitDeploymentEvent(tx, deployment.id, 'deploying');
+    return row;
+  });
   if (!updated) throw new CanceledError();
   await enqueueRelease(ctx.releaseQueue, deployment.id, environment === 'production');
   log.line('[orb] Image ready. Handing over to the scheduler…');
@@ -474,14 +495,27 @@ function generateForRuntime(
 /** Static deployments are live as soon as their files are uploaded. */
 async function markReady(ctx: WorkerContext, deployment: Deployment, project: Project, extra: { fileCount: number }) {
   const now = new Date();
-  const updated = await ctx.db
-    .update(deployments)
-    .set({ status: DeploymentStatus.READY, fileCount: extra.fileCount, buildFinishedAt: now, readyAt: now, updatedAt: now })
-    .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
-    .returning({ id: deployments.id });
-  if (updated.length === 0) throw new CanceledError();
-  if (deployment.environment === 'production') {
-    await ctx.db.update(projects).set({ currentDeploymentId: deployment.id, sleepingAt: null, updatedAt: now }).where(eq(projects.id, project.id));
-  }
+  const promoted = deployment.environment === 'production';
+  const done = await withOutbox(ctx.db, async (tx) => {
+    const updated = await tx
+      .update(deployments)
+      .set({ status: DeploymentStatus.READY, fileCount: extra.fileCount, buildFinishedAt: now, readyAt: now, updatedAt: now })
+      .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.BUILDING)))
+      .returning({ id: deployments.id });
+    if (updated.length === 0) return false;
+    let previous: string | null = null;
+    if (promoted) {
+      if (connectorEnabled()) {
+        const [current] = await tx.select({ id: projects.currentDeploymentId }).from(projects).where(eq(projects.id, project.id));
+        previous = current?.id ?? null;
+      }
+      await tx.update(projects).set({ currentDeploymentId: deployment.id, sleepingAt: null, updatedAt: now }).where(eq(projects.id, project.id));
+    }
+    // Exactly once per transition, in the same transaction as the status change: ready first, then promoted.
+    await emitDeploymentEvent(tx, deployment.id, 'ready');
+    if (promoted && previous !== deployment.id) await emitDeploymentEvent(tx, deployment.id, 'promoted', undefined, { previousDeploymentId: previous });
+    return true;
+  });
+  if (!done) throw new CanceledError();
   await publishRouteInvalidation(ctx.redis, { projectId: project.id });
 }

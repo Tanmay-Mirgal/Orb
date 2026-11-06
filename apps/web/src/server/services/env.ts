@@ -1,5 +1,5 @@
 import { decryptSecret, encryptSecret } from 'core';
-import { and, count, eq, environmentVariables, type EnvironmentVariable } from 'database';
+import { and, count, emitEnvEvent, eq, environmentVariables, withOutbox, type ActorSpec, type EnvironmentVariable, type Executor } from 'database';
 import { MAX_ENV_VARS_PER_PROJECT, type EnvVarInput } from 'shared';
 import { db } from '@/lib/db';
 import { badRequest, notFound } from '../api';
@@ -33,7 +33,7 @@ export async function listEnvVars(projectId: string): Promise<EnvVarView[]> {
 }
 
 /** Upserts on (project, key, target) so pasting a `.env` file twice is idempotent. */
-export async function upsertEnvVars(projectId: string, inputs: EnvVarInput[]): Promise<EnvVarView[]> {
+export async function upsertEnvVars(projectId: string, inputs: EnvVarInput[], actor: ActorSpec = { kind: 'user' }): Promise<EnvVarView[]> {
   const [existing] = await db.select({ n: count() }).from(environmentVariables).where(eq(environmentVariables.projectId, projectId));
   const known = await db
     .select({ key: environmentVariables.key, target: environmentVariables.target })
@@ -71,14 +71,24 @@ export async function upsertEnvVars(projectId: string, inputs: EnvVarInput[]): P
         .returning();
       saved.push(row!);
     }
+    // One `env.updated` per target, keys only; written in the same transaction as the change.
+    const byTarget = new Map<string, string[]>();
+    for (const row of saved) byTarget.set(row.target, [...(byTarget.get(row.target) ?? []), row.key]);
+    for (const [target, keys] of byTarget) {
+      await emitEnvEvent(tx as unknown as Executor, projectId, keys, target as 'all' | 'production' | 'preview', 'set', actor);
+    }
   });
   return saved.map(toView);
 }
 
-export async function deleteEnvVar(projectId: string, id: string): Promise<void> {
-  const deleted = await db
-    .delete(environmentVariables)
-    .where(and(eq(environmentVariables.id, id), eq(environmentVariables.projectId, projectId)))
-    .returning({ id: environmentVariables.id });
+export async function deleteEnvVar(projectId: string, id: string, actor: ActorSpec = { kind: 'user' }): Promise<void> {
+  const deleted = await withOutbox(db, async (tx) => {
+    const rows = await tx
+      .delete(environmentVariables)
+      .where(and(eq(environmentVariables.id, id), eq(environmentVariables.projectId, projectId)))
+      .returning({ id: environmentVariables.id, key: environmentVariables.key, target: environmentVariables.target });
+    if (rows[0]) await emitEnvEvent(tx, projectId, [rows[0].key], rows[0].target as 'all' | 'production' | 'preview', 'removed', actor);
+    return rows;
+  });
   if (deleted.length === 0) throw notFound('Environment variable');
 }

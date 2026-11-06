@@ -1,3 +1,4 @@
+import { actorOf } from '@/server/actor';
 import { route } from '@/server/api';
 import { audit } from '@/server/audit';
 import { authenticate, deploymentContext } from '@/server/context';
@@ -10,7 +11,7 @@ export const POST = route<{ deploymentId: string }>(async ({ req, params }) => {
   const auth = await authenticate(req);
   const { deployment, project, org } = await deploymentContext(auth, params.deploymentId, 'deployment:promote');
   const isRollback = project.currentDeploymentId !== null && project.currentDeploymentId !== deployment.id;
-  const result = await promoteDeployment(project, deployment);
+  const result = await promoteDeployment(project, deployment, actorOf(auth));
   await audit(auth, {
     orgId: org.id,
     action: isRollback ? 'deployment.rollback' : 'deployment.promote',

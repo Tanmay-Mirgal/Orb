@@ -1,3 +1,4 @@
+import { actorOf } from '@/server/actor';
 import { z } from 'zod';
 import { envVarInputSchema, parseDotenv } from 'shared';
 import { badRequest, parseBody, route } from '@/server/api';
@@ -39,7 +40,7 @@ export const PUT = route<{ projectId: string }>(async ({ req, params }) => {
   }
   if (inputs.length === 0) throw badRequest('No variables provided');
 
-  const saved = await upsertEnvVars(params.projectId, inputs);
+  const saved = await upsertEnvVars(params.projectId, inputs, actorOf(auth));
   await audit(auth, {
     orgId: ctx.org.id,
     action: 'env.upsert',

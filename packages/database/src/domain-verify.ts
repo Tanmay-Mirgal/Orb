@@ -1,6 +1,7 @@
 import { checkRouting, generateDomainVerificationToken, platformConfig, verifyOwnership } from 'core';
 import { eq } from 'drizzle-orm';
 import type { Database } from './client';
+import { emitDomainEvent, withOutbox, SYSTEM_ACTOR, type ActorSpec } from './connector';
 import { domains, type Domain } from './schema';
 
 export interface DomainRefresh {
@@ -17,7 +18,7 @@ export interface DomainRefresh {
  *   active   -> DNS routes to Orb (or verified via TXT)
  * A CNAME or A record pointing to Orb proves ownership directly.
  */
-export async function refreshDomain(db: Database, row: Domain): Promise<DomainRefresh> {
+export async function refreshDomain(db: Database, row: Domain, actor: ActorSpec = SYSTEM_ACTOR): Promise<DomainRefresh> {
   const token = row.verificationToken ?? generateDomainVerificationToken();
   const { cnameTarget, platformIps } = platformConfig();
 
@@ -41,11 +42,17 @@ export async function refreshDomain(db: Database, row: Domain): Promise<DomainRe
 
   const changed = status !== row.status || Boolean(verifiedAt) !== Boolean(row.verifiedAt);
   const now = new Date();
-  const [updated] = await db
-    .update(domains)
-    .set({ status, verifiedAt, verificationToken: token, lastCheckedAt: now, lastError, updatedAt: now })
-    .where(eq(domains.domain, row.domain))
-    .returning();
+  const updated = await withOutbox(db, async (tx) => {
+    const [saved] = await tx
+      .update(domains)
+      .set({ status, verifiedAt, verificationToken: token, lastCheckedAt: now, lastError, updatedAt: now })
+      .where(eq(domains.domain, row.domain))
+      .returning();
+    // Events only for real transitions of "serving traffic", written with the status change.
+    if (saved && status === 'active' && row.status !== 'active') await emitDomainEvent(tx, saved, 'verified', actor);
+    else if (saved && status !== 'active' && row.status === 'active') await emitDomainEvent(tx, saved, 'verification_failed', actor);
+    return saved;
+  });
 
   return { domain: updated ?? row, changed, ownership, routing };
 }

@@ -1,12 +1,29 @@
 import type { ZodType } from 'zod';
+import { connectorEnabled } from 'core';
+import { emitPlanLimitEvent } from 'database';
 import { cpNotFound, cpValidation, getAction } from 'shared';
 import type { ActionInput } from 'shared';
+import { db } from '@/lib/db';
+import { PlanLimitError } from '../api';
+import { getRedis } from '../infra';
 import { HANDLERS, startWaitForDeployment, type ActionContext, type SyncActionName } from './actions';
 import { connectAuthed, requireScope } from './auth';
 import { ConnectResponse, readBodyText } from './http';
 import { readIdempotencyKey, requestHash, withIdempotency, type StoredResponse } from './idempotency';
 import { advanceOperation, createOperation, loadOperation, operationView, pollUrl } from './operations';
 import { ignoreUnknownFields, parseInput } from './validate';
+
+/** `plan.limit_reached`, at most once per team and limit kind every 10 minutes. Best effort: it never fails the request. */
+async function reportPlanLimit(orgId: string, userId: string, err: PlanLimitError): Promise<void> {
+  if (!connectorEnabled()) return;
+  try {
+    const kind = err.kind ?? 'other';
+    const first = await getRedis().set(`cp1:planlimit:${orgId}:${kind}`, '1', 'EX', 600, 'NX');
+    if (first) await emitPlanLimitEvent(db, orgId, { limit: err.limit ?? null, kind }, { kind: 'connector', userId });
+  } catch {
+    /* ignore */
+  }
+}
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -36,6 +53,14 @@ export const actionRoute = connectAuthed<{ name: string }>({}, async ({ req, par
   const ctx: ActionContext = { auth, requestId };
 
   const execute = async (): Promise<StoredResponse> => {
+    try {
+      return await run();
+    } catch (err) {
+      if (err instanceof PlanLimitError) await reportPlanLimit(auth.org.id, auth.userId, err);
+      throw err;
+    }
+  };
+  const run = async (): Promise<StoredResponse> => {
     if (def.async) {
       const started = await startWaitForDeployment(ctx, input as ActionInput<'projects.waitForDeployment'>);
       const op = await createOperation(auth, def.name, started.input, started.deadlineAt);

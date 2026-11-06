@@ -1,5 +1,5 @@
 import { challengeHost, challengeValue, generateDomainVerificationToken, platformConfig, publishRouteInvalidation } from 'core';
-import { and, count, domains, eq, refreshDomain, type Domain } from 'database';
+import { and, count, domains, emitDomainEvent, eq, refreshDomain, type ActorSpec, type Domain, type Executor } from 'database';
 import { getOrgPlan, isValidCustomDomain, looksLikeApexDomain, normalizeDomain } from 'shared';
 import { db } from '@/lib/db';
 import { badRequest, conflict, notFound, planLimit } from '../api';
@@ -42,6 +42,7 @@ export async function addDomain(options: {
   orgPlan: string;
   rawDomain: string;
   redirectTo?: string | null;
+  actor?: ActorSpec;
 }): Promise<DomainView> {
   const { baseDomain } = platformConfig();
   const domain = normalizeDomain(options.rawDomain);
@@ -78,15 +79,16 @@ export async function addDomain(options: {
         redirectTo,
       })
       .returning();
+    await emitDomainEvent(tx as unknown as Executor, row!, 'added', options.actor ?? { kind: 'user' });
     return toView(row!);
   });
 }
 
-export async function verifyDomain(projectId: string, domainName: string): Promise<{ domain: DomainView; ownership: { ok: boolean; detail: string }; routing: { ok: boolean; detail: string } | null }> {
+export async function verifyDomain(projectId: string, domainName: string, actor: ActorSpec = { kind: 'user' }): Promise<{ domain: DomainView; ownership: { ok: boolean; detail: string }; routing: { ok: boolean; detail: string } | null }> {
   const domain = normalizeDomain(domainName);
   const [row] = await db.select().from(domains).where(and(eq(domains.domain, domain), eq(domains.projectId, projectId)));
   if (!row) throw notFound('Domain');
-  const result = await refreshDomain(db, row);
+  const result = await refreshDomain(db, row, actor);
   if (result.changed) await publishRouteInvalidation(getRedis(), { projectId });
   return { domain: toView(result.domain), ownership: result.ownership, routing: result.routing };
 }

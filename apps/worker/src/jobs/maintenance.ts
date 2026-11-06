@@ -1,12 +1,13 @@
 import { spawn } from 'node:child_process';
 import type { Job } from 'bullmq';
-import { enqueueRelease, publishRouteInvalidation } from 'core';
+import { connectorEnabled, enqueueRelease, publishRouteInvalidation } from 'core';
 import {
   and,
   asc,
   deployments,
   desc,
   domains,
+  emitDeploymentEvent,
   eq,
   inArray,
   instances,
@@ -18,6 +19,7 @@ import {
   refreshDomain,
   sql,
   usageHourly,
+  withOutbox,
 } from 'database';
 import {
   DeploymentStatus,
@@ -34,6 +36,7 @@ import type { WorkerContext } from '../context';
 import { notifyDeployment } from '../notifications';
 import { ACTIVE_INSTANCE_STATUSES, listLiveNodes, pickNodes } from '../orchestrator/nodes';
 import { drainDeployment, stopInstances } from '../orchestrator/release';
+import { checkServiceRecovery, markInstance, runRetention, shouldAnnounceUnhealthy } from './connector-events';
 import { notifyDomainChange, notifyServiceDown, runIdleSleep, runPlanExpiry } from './lifecycle';
 
 export const SCHEDULERS = {
@@ -47,14 +50,24 @@ export const SCHEDULERS = {
   'idle-sleep': 5 * 60_000,
 } as const;
 
+/** Only scheduled while the ecosystem connector is enabled. */
+export const CONNECTOR_SCHEDULERS = {
+  'connector-retention': 60 * 60_000,
+} as const;
+
 export async function runMaintenanceJob(ctx: WorkerContext, job: Job): Promise<unknown> {
   switch (job.name) {
     case 'domain-check':
       return checkDomains(ctx);
     case 'metrics-flush':
       return flushMetrics(ctx);
-    case 'reconcile':
-      return reconcileInstances(ctx);
+    case 'reconcile': {
+      const result = await reconcileInstances(ctx);
+      await checkServiceRecovery(ctx); // service.recovered (no-op unless the connector is on)
+      return result;
+    }
+    case 'connector-retention':
+      return connectorEnabled() ? runRetention(ctx) : undefined;
     case 'reaper':
       return reapStuckDeployments(ctx);
     case 'gc':
@@ -199,10 +212,9 @@ async function reconcileInstances(ctx: WorkerContext) {
       else if (inst.status === 'UNHEALTHY') next = 'RUNNING';
     }
     if (next && next !== inst.status) {
-      await ctx.db
-        .update(instances)
-        .set({ status: next, updatedAt: new Date(), ...(next === 'LOST' ? { stoppedAt: new Date() } : {}) })
-        .where(eq(instances.id, inst.id));
+      // The status change and its service.unhealthy event are one transaction (rate limited per project).
+      const announce = next === 'LOST' || next === 'UNHEALTHY' ? await shouldAnnounceUnhealthy(ctx, inst) : false;
+      await markInstance(ctx, inst, { status: next, updatedAt: new Date(), ...(next === 'LOST' ? { stoppedAt: new Date() } : {}) }, announce);
       affected.set(inst.deploymentId, inst.projectId);
       if (next === 'LOST') lost++;
     }
@@ -228,17 +240,21 @@ async function reconcileInstances(ctx: WorkerContext) {
 // ---------------------------------------------------------------------------
 async function reapStuckDeployments(ctx: WorkerContext) {
   const ago = (ms: number) => new Date(Date.now() - ms);
-  const stuck = await ctx.db
-    .update(deployments)
-    .set({ status: DeploymentStatus.FAILED, errorMessage: 'Timed out: the deployment stopped making progress', updatedAt: new Date() })
-    .where(
-      or(
-        and(eq(deployments.status, DeploymentStatus.BUILDING), lt(deployments.updatedAt, ago(2 * 3_600_000))),
-        and(eq(deployments.status, DeploymentStatus.DEPLOYING), lt(deployments.updatedAt, ago(30 * 60_000))),
-        and(eq(deployments.status, DeploymentStatus.QUEUED), lt(deployments.updatedAt, ago(3_600_000))),
-      ),
-    )
-    .returning({ id: deployments.id });
+  const stuck = await withOutbox(ctx.db, async (tx) => {
+    const rows = await tx
+      .update(deployments)
+      .set({ status: DeploymentStatus.FAILED, errorMessage: 'Timed out: the deployment stopped making progress', updatedAt: new Date() })
+      .where(
+        or(
+          and(eq(deployments.status, DeploymentStatus.BUILDING), lt(deployments.updatedAt, ago(2 * 3_600_000))),
+          and(eq(deployments.status, DeploymentStatus.DEPLOYING), lt(deployments.updatedAt, ago(30 * 60_000))),
+          and(eq(deployments.status, DeploymentStatus.QUEUED), lt(deployments.updatedAt, ago(3_600_000))),
+        ),
+      )
+      .returning({ id: deployments.id });
+    for (const d of rows) await emitDeploymentEvent(tx, d.id, 'failed');
+    return rows;
+  });
   for (const d of stuck) await notifyDeployment(ctx, d.id, 'failed');
   return { reaped: stuck.length };
 }

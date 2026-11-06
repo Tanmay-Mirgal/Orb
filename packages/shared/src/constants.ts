@@ -118,6 +118,8 @@ export const QUEUES = {
   release: 'orb-releases',
   /** repeatable platform housekeeping jobs */
   maintenance: 'orb-maintenance',
+  /** ecosystem connector: fan events out to webhook endpoints and deliver them (only when CONNECTOR_ENABLED) */
+  connectorWebhooks: 'orb-connector-webhooks',
   /** per-node command queue consumed by the runner agent on that node */
   runner: (nodeId: string) => `orb-runner-${nodeId}`,
 } as const;

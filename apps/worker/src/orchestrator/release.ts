@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { Job } from 'bullmq';
-import { deploymentUrl, publishRouteInvalidation } from 'core';
+import { connectorEnabled, deploymentUrl, publishRouteInvalidation } from 'core';
 import {
   and,
   deployments,
+  emitDeploymentEvent,
   eq,
   inArray,
   instances,
   organizations,
   projects,
+  withOutbox,
   type Deployment,
   type Project,
 } from 'database';
@@ -159,10 +161,14 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
     ctx.logger.warn({ deploymentId: deployment.id, err: message }, 'release failed');
     // A deployment that was already serving stays READY; only a first release is marked failed.
     if (deployment.status === DeploymentStatus.DEPLOYING) {
-      await db
-        .update(deployments)
-        .set({ status: DeploymentStatus.FAILED, errorMessage: message.slice(0, 2000), updatedAt: new Date() })
-        .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.DEPLOYING)));
+      await withOutbox(db, async (tx) => {
+        const rows = await tx
+          .update(deployments)
+          .set({ status: DeploymentStatus.FAILED, errorMessage: message.slice(0, 2000), updatedAt: new Date() })
+          .where(and(eq(deployments.id, deployment.id), eq(deployments.status, DeploymentStatus.DEPLOYING)))
+          .returning({ id: deployments.id });
+        if (rows.length > 0) await emitDeploymentEvent(tx, deployment.id, 'failed');
+      });
       await notifyDeployment(ctx, deployment.id, 'failed');
     }
     throw err;
@@ -175,17 +181,26 @@ export async function runReleaseJob(ctx: WorkerContext, job: Job<ReleaseJob>): P
 async function markReady(ctx: WorkerContext, deployment: Deployment, project: Project, promote: boolean) {
   const { db } = ctx;
   const now = new Date();
-  const [fresh] = await db.select({ status: deployments.status }).from(deployments).where(eq(deployments.id, deployment.id));
-  if (fresh?.status === DeploymentStatus.CANCELED) throw new Error('Deployment was canceled');
-  await db
-    .update(deployments)
-    .set({ status: DeploymentStatus.READY, readyAt: deployment.readyAt ?? now, buildFinishedAt: deployment.buildFinishedAt ?? now, updatedAt: now })
-    .where(eq(deployments.id, deployment.id));
+  let previous: string | null = null;
+  await withOutbox(db, async (tx) => {
+    // With the connector on the row is locked, so two release jobs for one deployment announce READY only once.
+    const read = tx.select({ status: deployments.status }).from(deployments).where(eq(deployments.id, deployment.id));
+    const [fresh] = await (connectorEnabled() ? read.for('update') : read);
+    if (fresh?.status === DeploymentStatus.CANCELED) throw new Error('Deployment was canceled');
+    await tx
+      .update(deployments)
+      .set({ status: DeploymentStatus.READY, readyAt: deployment.readyAt ?? now, buildFinishedAt: deployment.buildFinishedAt ?? now, updatedAt: now })
+      .where(eq(deployments.id, deployment.id));
+    if (promote) {
+      const [current] = await tx.select({ id: projects.currentDeploymentId }).from(projects).where(eq(projects.id, project.id));
+      previous = current?.id ?? null;
+      await tx.update(projects).set({ currentDeploymentId: deployment.id, sleepingAt: null, updatedAt: now }).where(eq(projects.id, project.id));
+    }
+    if (fresh?.status !== DeploymentStatus.READY) await emitDeploymentEvent(tx, deployment.id, 'ready');
+    if (promote && previous !== deployment.id) await emitDeploymentEvent(tx, deployment.id, 'promoted', undefined, { previousDeploymentId: previous });
+  });
 
   if (promote) {
-    const [current] = await db.select({ id: projects.currentDeploymentId }).from(projects).where(eq(projects.id, project.id));
-    const previous = current?.id ?? null;
-    await db.update(projects).set({ currentDeploymentId: deployment.id, sleepingAt: null, updatedAt: now }).where(eq(projects.id, project.id));
     await publishRouteInvalidation(ctx.redis, { projectId: project.id });
     if (previous && previous !== deployment.id) {
       const payload: DrainJob = { deploymentId: previous };

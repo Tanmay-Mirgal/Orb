@@ -6,13 +6,18 @@ import {
   deployments,
   environmentVariables,
   eq,
+  emitProjectEvent,
+  emitProjectEventById,
   inArray,
   instances,
   ne,
   projectRegistryCredentials,
   projectRepositories,
   projects,
+  withOutbox,
+  type ActorSpec,
   type Deployment,
+  type Executor,
   type Organization,
   type Project,
   type ProjectRepository,
@@ -186,6 +191,8 @@ export async function createProject(options: {
         })),
       );
     }
+    // Same transaction as the insert: the event exists if and only if the project does.
+    await emitProjectEvent(tx as unknown as Executor, project!, repository, 'created', { kind: extras?.createdVia === 'connector' ? 'connector' : 'user', userId });
     return { project: project!, repository };
   });
 
@@ -211,6 +218,7 @@ export async function updateProject(options: {
   project: Project;
   input: UpdateProjectInput;
   extras?: Pick<CreationExtras, 'metadata' | 'externalRef'>;
+  actor?: ActorSpec;
 }): Promise<Project> {
   const { org, project, input, extras } = options;
   assertWithinPlan(org, input);
@@ -231,19 +239,23 @@ export async function updateProject(options: {
   if (project.type === 'cron' && patch.cronSchedule === undefined && !project.cronSchedule) {
     throw badRequest('Cron jobs need a schedule');
   }
-  const [updated] = await db.update(projects).set(patch).where(eq(projects.id, project.id)).returning();
-  if (branch) {
-    await db.update(projectRepositories).set({ branch }).where(eq(projectRepositories.projectId, project.id));
-  }
-  if (registry !== undefined) await saveRegistryCredentials(db, project.id, registry, updated!.dockerImage);
-  return updated!;
+  const updated = await withOutbox(db, async (tx) => {
+    const [row] = await tx.update(projects).set(patch).where(eq(projects.id, project.id)).returning();
+    if (branch) {
+      await tx.update(projectRepositories).set({ branch }).where(eq(projectRepositories.projectId, project.id));
+    }
+    if (registry !== undefined) await saveRegistryCredentials(tx, project.id, registry, row!.dockerImage);
+    await emitProjectEventById(tx, project.id, 'updated', options.actor ?? { kind: 'user' });
+    return row!;
+  });
+  return updated;
 }
 
 /**
  * Deletes the project row immediately (cascading deployments/domains/env vars) and hands the cleanup of
  * running containers and stored artifacts to the maintenance worker, which no longer needs the rows.
  */
-export async function deleteProject(project: Project): Promise<void> {
+export async function deleteProject(project: Project, actor: ActorSpec = { kind: 'user' }): Promise<void> {
   const projectDeployments = await db.select({ id: deployments.id }).from(deployments).where(eq(deployments.projectId, project.id));
   const deploymentIds = projectDeployments.map((d) => d.id);
   const running = deploymentIds.length
@@ -253,7 +265,12 @@ export async function deleteProject(project: Project): Promise<void> {
         .where(and(eq(instances.projectId, project.id), inArray(instances.status, ['STARTING', 'RUNNING', 'UNHEALTHY'])))
     : [];
 
-  await db.delete(projects).where(eq(projects.id, project.id));
+  await withOutbox(db, async (tx) => {
+    const [repository] = await tx.select().from(projectRepositories).where(eq(projectRepositories.projectId, project.id)).limit(1);
+    // The event carries the project's last known state and is written in the same transaction as the delete.
+    await emitProjectEvent(tx, project, repository ?? null, 'deleted', actor);
+    await tx.delete(projects).where(eq(projects.id, project.id));
+  });
   await publishRouteInvalidation(getRedis(), { projectId: project.id });
   await getMaintenanceQueue().add('teardown-project', {
     projectId: project.id,

@@ -1,4 +1,4 @@
-import { and, deployments, environmentVariables, eq, projectRepositories, toDeploymentEntity, toProjectEntity, type Deployment, type Project } from 'database';
+import { and, deployments, environmentVariables, eq, projectRepositories, toDeploymentEntity, toProjectEntity, type ActorSpec, type Deployment, type Project } from 'database';
 import { env, getRepositoryInstallationId } from 'core';
 import {
   createProjectSchema,
@@ -34,6 +34,9 @@ export type SyncActionName = Exclude<ActionName, 'projects.waitForDeployment'>;
 type Handler<N extends SyncActionName> = (ctx: ActionContext, input: ActionInput<N>) => Promise<ActionOutput<N>>;
 
 const CONNECTED = 'connector' as const;
+
+/** Events caused by an action name the connector and the user who consented as their actor. */
+const actorOf = (auth: ConnectorAuth): ActorSpec => ({ kind: 'connector', userId: auth.userId });
 
 /** Provenance and correlation ids stored on what the connector creates; its deployments are recorded as `api`. */
 const extrasOf = (input: { metadata?: Record<string, unknown>; externalRef?: CreationExtras['externalRef'] }): CreationExtras => ({
@@ -184,7 +187,7 @@ const projectsUpdate: Handler<'projects.update'> = async ({ auth }, input) => {
   const { projectId, metadata, externalRef, ...rest } = input;
   void projectId;
   const parsed = updateProjectSchema.parse(rest);
-  const updated = await updateProject({ org: auth.org, project, input: parsed, extras: { metadata, externalRef } });
+  const updated = await updateProject({ org: auth.org, project, input: parsed, extras: { metadata, externalRef }, actor: actorOf(auth) });
   await auditConnectorCall(auth, 'projects.update', { orgId: auth.org.id, action: 'project.update', targetType: 'project', targetId: project.id, metadata: { fields: Object.keys(rest) } });
   return { project: toProjectEntity(updated, await repositoryOf(project.id)) };
 };
@@ -209,7 +212,7 @@ const deploymentsTrigger: Handler<'deployments.trigger'> = async ({ auth }, inpu
 
 const deploymentsCancel: Handler<'deployments.cancel'> = async ({ auth }, input) => {
   const { deployment, project } = await pinnedDeployment(auth, input.deploymentId);
-  const canceled = await cancelDeployment(deployment);
+  const canceled = await cancelDeployment(deployment, actorOf(auth));
   await auditConnectorCall(auth, 'deployments.cancel', { orgId: auth.org.id, action: 'deployment.cancel', targetType: 'deployment', targetId: deployment.id });
   return deploymentOutput(canceled, project);
 };
@@ -242,7 +245,7 @@ const deploymentsPromote: Handler<'deployments.promote'> = async ({ auth }, inpu
   requirePermission(auth, 'deployment:promote');
   const { deployment, project } = await pinnedDeployment(auth, input.deploymentId);
   const isRollback = project.currentDeploymentId !== null && project.currentDeploymentId !== deployment.id;
-  const result = await promoteDeployment(project, deployment);
+  const result = await promoteDeployment(project, deployment, actorOf(auth));
   await auditConnectorCall(auth, 'deployments.promote', {
     orgId: auth.org.id,
     action: isRollback ? 'deployment.rollback' : 'deployment.promote',
@@ -267,7 +270,7 @@ const envSet: Handler<'env.set'> = async ({ auth }, input) => {
     vars = input.vars.map((v) => ({ key: v.key, value: v.value, scope: v.scope, target: v.target, isSecret: v.sensitive }));
   }
   if (vars.length === 0) throw cpValidation('No environment variables found in the request');
-  const saved = await upsertEnvVars(project.id, vars);
+  const saved = await upsertEnvVars(project.id, vars, actorOf(auth));
   const keys = saved.map((s) => ({ key: s.key, target: s.target, scope: s.scope, sensitive: s.isSecret }));
   // The audit trail records which keys changed, never their values.
   await auditConnectorCall(auth, 'env.set', { orgId: auth.org.id, action: 'env.set', targetType: 'project', targetId: project.id, metadata: { keys: keys.map((k) => k.key) } });
@@ -282,7 +285,7 @@ const envRemove: Handler<'env.remove'> = async ({ auth }, input) => {
     .where(and(eq(environmentVariables.projectId, project.id), eq(environmentVariables.key, input.key), eq(environmentVariables.target, input.target)))
     .limit(1);
   if (row) {
-    await deleteEnvVar(project.id, row.id);
+    await deleteEnvVar(project.id, row.id, actorOf(auth));
     await auditConnectorCall(auth, 'env.remove', { orgId: auth.org.id, action: 'env.delete', targetType: 'project', targetId: project.id, metadata: { key: input.key } });
   }
   return { projectId: project.id, key: input.key, target: input.target, removed: Boolean(row) };
@@ -290,14 +293,14 @@ const envRemove: Handler<'env.remove'> = async ({ auth }, input) => {
 
 const domainsAdd: Handler<'domains.add'> = async ({ auth }, input) => {
   const { project } = await pinnedProject(auth, input.projectId);
-  const view = await addDomain({ projectId: project.id, orgPlan: auth.org.plan, rawDomain: input.domain, redirectTo: input.redirectTo });
+  const view = await addDomain({ projectId: project.id, orgPlan: auth.org.plan, rawDomain: input.domain, redirectTo: input.redirectTo, actor: actorOf(auth) });
   await auditConnectorCall(auth, 'domains.add', { orgId: auth.org.id, action: 'domain.add', targetType: 'domain', targetId: view.domain });
   return { domain: toDomainEntity(view, project) };
 };
 
 const domainsVerify: Handler<'domains.verify'> = async ({ auth }, input) => {
   const { project } = await pinnedProject(auth, input.projectId);
-  const result = await verifyDomain(project.id, input.domain);
+  const result = await verifyDomain(project.id, input.domain, actorOf(auth));
   await auditConnectorCall(auth, 'domains.verify', { orgId: auth.org.id, action: 'domain.verify', targetType: 'domain', targetId: result.domain.domain });
   return { domain: toDomainEntity(result.domain, project), ownership: result.ownership, routing: result.routing };
 };

@@ -73,6 +73,27 @@ export class FakeRedis {
     return e?.expiresAt ? Math.ceil((e.expiresAt - Date.now()) / 1000) : -1;
   }
 
+  private sets = new Map<string, Set<string>>();
+
+  async sadd(key: string, ...members: string[]) {
+    const set = this.sets.get(key) ?? new Set<string>();
+    const before = set.size;
+    for (const m of members) set.add(m);
+    this.sets.set(key, set);
+    return set.size - before;
+  }
+
+  async smembers(key: string) {
+    return [...(this.sets.get(key) ?? [])];
+  }
+
+  async srem(key: string, ...members: string[]) {
+    const set = this.sets.get(key);
+    let removed = 0;
+    for (const m of members) if (set?.delete(m)) removed++;
+    return removed;
+  }
+
   async publish() {
     return 0;
   }
@@ -97,6 +118,7 @@ export class FakeRedis {
 
   flush() {
     this.store.clear();
+    this.sets.clear();
   }
 }
 

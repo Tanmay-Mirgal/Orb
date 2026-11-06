@@ -1,11 +1,12 @@
-import { Worker } from 'bullmq';
-import { assertConnectorConfig, bullConnection, createMetrics, loadEnv, startOpsServer } from 'core';
+import { Queue, Worker } from 'bullmq';
+import { assertConnectorConfig, bullConnection, connectorEnabled, createMetrics, loadEnv, startOpsServer } from 'core';
 import { sql } from 'database';
 import { QUEUES } from 'shared';
 import { runBuildJob } from './build/pipeline';
 import { runProcess } from './build/docker-login';
 import { createContext } from './context';
-import { runMaintenanceJob, SCHEDULERS } from './jobs/maintenance';
+import { runWebhookDispatch } from './jobs/connector-events';
+import { CONNECTOR_SCHEDULERS, runMaintenanceJob, SCHEDULERS } from './jobs/maintenance';
 import { runReleaseJob } from './orchestrator/release';
 
 loadEnv();
@@ -47,8 +48,29 @@ async function main() {
     worker.on('error', (err) => logger.error({ queue: name, err: err.message }, 'worker error'));
   }
 
+  // Ecosystem connector (CP1): webhook delivery and retention exist only while it is enabled. Several workers
+  // may run the dispatcher: every claim in the database is FOR UPDATE SKIP LOCKED.
+  let connectorQueue: Queue | undefined;
+  let connectorWorker: Worker | undefined;
+  const schedulers: Record<string, number> = { ...SCHEDULERS };
+  if (connectorEnabled()) {
+    Object.assign(schedulers, CONNECTOR_SCHEDULERS);
+    connectorQueue = new Queue(QUEUES.connectorWebhooks, { connection, defaultJobOptions: { removeOnComplete: 20, removeOnFail: 100 } });
+    connectorWorker = new Worker(QUEUES.connectorWebhooks, () => runWebhookDispatch(ctx), { connection, concurrency: 1 });
+    connectorWorker.on('failed', (job, err) => logger.warn({ queue: 'connector-webhooks', job: job?.id, err: err.message }, 'connector dispatch failed'));
+    connectorWorker.on('error', (err) => logger.error({ queue: 'connector-webhooks', err: err.message }, 'connector worker error'));
+    await connectorQueue.upsertJobScheduler('connector-dispatch', { every: 5_000 }, { name: 'dispatch', data: {} });
+    logger.info('ecosystem connector enabled: webhook dispatcher running');
+  } else {
+    // Switched off after having been on: stop the schedulers a previous run left behind.
+    await Promise.allSettled(Object.keys(CONNECTOR_SCHEDULERS).map((name) => ctx.maintenanceQueue.removeJobScheduler(name)));
+    const stale = new Queue(QUEUES.connectorWebhooks, { connection });
+    await stale.removeJobScheduler('connector-dispatch').catch(() => undefined);
+    await stale.close();
+  }
+
   // Repeatable platform jobs. upsertJobScheduler is idempotent, so every worker instance can call it.
-  for (const [name, every] of Object.entries(SCHEDULERS)) {
+  for (const [name, every] of Object.entries(schedulers)) {
     await ctx.maintenanceQueue.upsertJobScheduler(name, { every }, { name, data: {} });
   }
 
@@ -77,7 +99,7 @@ async function main() {
     ops.close();
     // Let in-flight builds finish (up to 60 s); unfinished ones are picked up again by BullMQ's stalled-job recovery.
     await Promise.race([
-      Promise.all([builds.close(), releases.close(), maintenance.close()]),
+      Promise.all([builds.close(), releases.close(), maintenance.close(), connectorWorker?.close(), connectorQueue?.close()]),
       new Promise((resolve) => setTimeout(resolve, 60_000)),
     ]);
     await ctx.runners.close();

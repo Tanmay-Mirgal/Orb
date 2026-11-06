@@ -1,3 +1,4 @@
+import { actorOf } from '@/server/actor';
 import { deploymentUrl } from 'core';
 import { deployments, eq } from 'database';
 import { updateProjectSchema } from 'shared';
@@ -22,7 +23,7 @@ export const PATCH = route<{ projectId: string }>(async ({ req, params }) => {
   const auth = await authenticate(req);
   const ctx = await projectContext(auth, params.projectId, 'project:update');
   const input = await parseBody(req, updateProjectSchema);
-  const project = await updateProject({ org: ctx.org, project: ctx.project, input });
+  const project = await updateProject({ org: ctx.org, project: ctx.project, input, actor: actorOf(auth) });
   await audit(auth, { orgId: ctx.org.id, action: 'project.update', targetType: 'project', targetId: project.id, metadata: { fields: Object.keys(input) } });
   return { project };
 });
@@ -30,7 +31,7 @@ export const PATCH = route<{ projectId: string }>(async ({ req, params }) => {
 export const DELETE = route<{ projectId: string }>(async ({ req, params }) => {
   const auth = await authenticate(req);
   const ctx = await projectContext(auth, params.projectId, 'project:delete');
-  await deleteProject(ctx.project);
+  await deleteProject(ctx.project, actorOf(auth));
   await audit(auth, { orgId: ctx.org.id, action: 'project.delete', targetType: 'project', targetId: ctx.project.id, metadata: { name: ctx.project.name } });
   return { ok: true };
 });

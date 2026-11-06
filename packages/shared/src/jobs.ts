@@ -14,6 +14,11 @@ export interface ReleaseJob {
   wake?: boolean;
 }
 
+/** One tick of the connector's webhook dispatcher. Carries nothing: the dispatcher reads the outbox from Postgres. */
+export interface ConnectorDispatchJob {
+  tick?: number;
+}
+
 export interface DrainJob {
   /** Stop every active instance of this deployment (unless it became the live one again meanwhile). */
   deploymentId: string;

@@ -25,3 +25,5 @@ export * from './domain-verify';
 export * from './notify';
 export * from './plan-grants';
 export * from './connector-entities';
+export * from './connector';
+export * from './connector-dispatch';
