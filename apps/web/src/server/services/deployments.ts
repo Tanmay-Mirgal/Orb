@@ -20,6 +20,7 @@ import {
   IN_FLIGHT_DEPLOYMENT_STATUSES,
   type DeploymentConfig,
   type DeploymentEnvironment,
+  type ExternalRef,
   type DeploymentTrigger,
   type ProjectType,
 } from 'shared';
@@ -61,6 +62,10 @@ export interface CreateDeploymentInput {
   commitAuthor?: string | null;
   config?: DeploymentConfig;
   createdBy?: string | null;
+  /** Ecosystem connector: caller data, merged over the project's correlation ids (a deployment inherits its project's). */
+  metadata?: Record<string, unknown>;
+  externalRef?: ExternalRef;
+  createdVia?: string;
 }
 
 const MAX_QUEUED_PER_PROJECT = 10;
@@ -74,7 +79,7 @@ export async function createDeployment(input: CreateDeploymentInput): Promise<De
   const plan = getOrgPlan(input.orgPlan);
 
   if (input.environment === 'preview' && !plan.previewDeployments) {
-    throw planLimit('Preview deployments are not included in your plan');
+    throw planLimit('Preview deployments are not included in your plan', { kind: 'preview_deployments' });
   }
   if (!project.slug) throw badRequest('Project has no slug');
   const config = input.config ?? snapshotConfig(project);
@@ -107,6 +112,9 @@ export async function createDeployment(input: CreateDeploymentInput): Promise<De
       subdomain: deploymentSubdomain(project.slug, id),
       config,
       createdBy: input.createdBy ?? null,
+      metadata: input.metadata ?? null,
+      externalRef: project.externalRef || input.externalRef ? { ...project.externalRef, ...input.externalRef } : null,
+      createdVia: input.createdVia ?? null,
     })
     .returning();
 

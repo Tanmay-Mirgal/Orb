@@ -56,7 +56,7 @@ export async function addDomain(options: {
   const plan = getOrgPlan(options.orgPlan);
   const [existingCount] = await db.select({ n: count() }).from(domains).where(eq(domains.projectId, options.projectId));
   if ((existingCount?.n ?? 0) >= plan.maxDomainsPerProject) {
-    throw planLimit(`Your plan allows ${plan.maxDomainsPerProject} custom domains per project`);
+    throw planLimit(`Your plan allows ${plan.maxDomainsPerProject} custom domains per project`, { limit: plan.maxDomainsPerProject, kind: 'domains' });
   }
 
   return db.transaction(async (tx) => {

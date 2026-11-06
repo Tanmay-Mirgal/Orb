@@ -48,6 +48,18 @@ export async function getInstallationToken(
   return body.token;
 }
 
+/**
+ * The installation of the Orb GitHub App on a repository, or null when the App is not installed there (push events
+ * only reach Orb for repositories that have it). Throws on errors other than "not installed".
+ */
+export async function getRepositoryInstallationId(appId: string, privateKeyPem: string, fullName: string): Promise<number | null> {
+  const jwt = createAppJwt(appId, privateKeyPem);
+  const res = await githubFetch(jwt, `/repos/${fullName}/installation`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub installation lookup failed (${res.status})`);
+  return ((await res.json()) as { id: number }).id;
+}
+
 /** Validates `X-Hub-Signature-256` against the raw request body. Missing secret/signature => false. */
 export function verifyGithubSignature(rawBody: string | Buffer, header: string | null | undefined, secret: string | undefined): boolean {
   if (!secret || !header) return false;

@@ -26,6 +26,8 @@ import {
   type CreateProjectInput,
   type RegistryCredentialsInput,
   type UpdateProjectInput,
+  type DeploymentTrigger,
+  type ExternalRef,
   type ProjectType,
 } from 'shared';
 import { db } from '@/lib/db';
@@ -37,13 +39,13 @@ import { createDeployment } from './deployments';
 function assertWithinPlan(org: Organization, input: { instancePlan?: string; instanceCount?: number; previewDeployments?: boolean; type?: ProjectType | string }) {
   const plan = getOrgPlan(org.plan);
   if (input.instancePlan && !plan.allowedInstancePlans.includes(input.instancePlan)) {
-    throw planLimit(`The ${getInstancePlan(input.instancePlan).name} instance size is not available on your ${plan.name} plan`);
+    throw planLimit(`The ${getInstancePlan(input.instancePlan).name} instance size is not available on your ${plan.name} plan`, { kind: 'instance_size' });
   }
   if (input.instanceCount && input.instanceCount > plan.maxInstancesPerService) {
-    throw planLimit(`Your ${plan.name} plan allows up to ${plan.maxInstancesPerService} instance(s) per service`);
+    throw planLimit(`Your ${plan.name} plan allows up to ${plan.maxInstancesPerService} instance(s) per service`, { limit: plan.maxInstancesPerService, kind: 'instances' });
   }
   if (input.previewDeployments && !plan.previewDeployments) {
-    throw planLimit('Preview deployments are not included in your plan');
+    throw planLimit('Preview deployments are not included in your plan', { kind: 'preview_deployments' });
   }
 }
 
@@ -80,18 +82,28 @@ async function saveRegistryCredentials(
     .onConflictDoUpdate({ target: projectRegistryCredentials.projectId, set: { registry, username: credentials.username, password, updatedAt: new Date() } });
 }
 
+/** Provenance and correlation stored by the ecosystem connector; absent for projects created in the dashboard. */
+export interface CreationExtras {
+  metadata?: Record<string, unknown>;
+  externalRef?: ExternalRef;
+  createdVia?: string;
+  /** How the first deployment is recorded. Defaults to `manual`. */
+  trigger?: DeploymentTrigger;
+}
+
 export async function createProject(options: {
   userId: string;
   org: Organization;
   input: CreateProjectInput;
+  extras?: CreationExtras;
 }): Promise<{ project: Project; repository: ProjectRepository | null; deployment: Deployment | null }> {
-  const { userId, org, input } = options;
+  const { userId, org, input, extras } = options;
   const plan = getOrgPlan(org.plan);
   const isImage = input.source === 'image';
 
   const [existing] = await db.select({ n: count() }).from(projects).where(eq(projects.orgId, org.id));
   if ((existing?.n ?? 0) >= plan.maxProjects) {
-    throw planLimit(`Your ${plan.name} plan allows up to ${plan.maxProjects} projects`);
+    throw planLimit(`Your ${plan.name} plan allows up to ${plan.maxProjects} projects`, { limit: plan.maxProjects, kind: 'projects' });
   }
   assertWithinPlan(org, input);
   const type = input.type as ProjectType;
@@ -105,6 +117,7 @@ export async function createProject(options: {
     if ((containers?.n ?? 0) >= plan.maxContainerProjects) {
       throw planLimit(
         `Your ${plan.name} plan includes ${plan.maxContainerProjects} web service / worker / cron project${plan.maxContainerProjects === 1 ? '' : 's'}. Static sites are not counted. Upgrade for more.`,
+        { limit: plan.maxContainerProjects, kind: 'container_projects' },
       );
     }
   }
@@ -143,6 +156,9 @@ export async function createProject(options: {
         cronSchedule: input.cronSchedule,
         autoDeploy: isImage ? false : (input.autoDeploy ?? true),
         previewDeployments: input.previewDeployments ?? false,
+        metadata: extras?.metadata ?? null,
+        externalRef: extras?.externalRef ?? null,
+        createdVia: extras?.createdVia ?? null,
       })
       .returning();
     let repository: ProjectRepository | null = null;
@@ -179,8 +195,12 @@ export async function createProject(options: {
         repository: created.repository,
         orgPlan: org.plan,
         environment: 'production',
-        trigger: 'manual',
+        trigger: extras?.trigger ?? 'manual',
         createdBy: userId,
+        // A deployment inherits the correlation ids and provenance of its project.
+        metadata: extras?.metadata,
+        externalRef: extras?.externalRef,
+        createdVia: extras?.createdVia,
       })
     : null;
   return { ...created, deployment };
@@ -190,8 +210,9 @@ export async function updateProject(options: {
   org: Organization;
   project: Project;
   input: UpdateProjectInput;
+  extras?: Pick<CreationExtras, 'metadata' | 'externalRef'>;
 }): Promise<Project> {
-  const { org, project, input } = options;
+  const { org, project, input, extras } = options;
   assertWithinPlan(org, input);
   const { branch, image, registry, ...rest } = input;
   const isImage = project.sourceType === 'image';
@@ -205,6 +226,8 @@ export async function updateProject(options: {
     if (value !== undefined) (patch as Record<string, unknown>)[key] = value;
   }
   if (image !== undefined) patch.dockerImage = image;
+  if (extras?.metadata !== undefined) patch.metadata = extras.metadata;
+  if (extras?.externalRef !== undefined) patch.externalRef = extras.externalRef;
   if (project.type === 'cron' && patch.cronSchedule === undefined && !project.cronSchedule) {
     throw badRequest('Cron jobs need a schedule');
   }

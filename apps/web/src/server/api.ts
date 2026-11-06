@@ -19,7 +19,17 @@ export const forbidden = (message = 'You do not have permission to do this') => 
 export const notFound = (what = 'Resource') => new ApiError(404, `${what} not found`, 'not_found');
 export const conflict = (message: string) => new ApiError(409, message, 'conflict');
 export const badRequest = (message: string, details?: unknown) => new ApiError(400, message, 'bad_request', details);
-export const planLimit = (message: string) => new ApiError(402, message, 'plan_limit');
+/** A plan limit that blocked the request. `limit`/`kind` are for the ecosystem connector; the dashboard JSON is unchanged. */
+export class PlanLimitError extends ApiError {
+  constructor(
+    message: string,
+    public readonly limit?: number,
+    public readonly kind?: string,
+  ) {
+    super(402, message, 'plan_limit');
+  }
+}
+export const planLimit = (message: string, info: { limit?: number; kind?: string } = {}) => new PlanLimitError(message, info.limit, info.kind);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function assertUuid(value: string, what = 'Resource'): void {

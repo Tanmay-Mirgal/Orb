@@ -195,6 +195,8 @@ export interface Harness {
   queues: { build: FakeQueue; release: FakeQueue; maintenance: FakeQueue };
   session: { user: TestUser | null };
   github: GithubState;
+  /** What the DNS checks of custom domains answer. */
+  dns: { routingOk: boolean };
 }
 
 let instance: Promise<Harness> | undefined;
@@ -210,6 +212,7 @@ async function create(): Promise<Harness> {
     queues: { build: new FakeQueue(), release: new FakeQueue(), maintenance: new FakeQueue() },
     session: { user: null },
     github: { validTokens: new Set(), login: 'octocat', repos: [], installed: new Set(), calls: [] },
+    dns: { routingOk: false },
   };
 }
 
@@ -244,7 +247,17 @@ export async function infraModule() {
 
 export async function coreOverrides(actual: Record<string, unknown>) {
   const h = await harness();
-  return { ...actual, githubFetch: makeGithubFetch(h.github) };
+  return {
+    ...actual,
+    githubFetch: makeGithubFetch(h.github),
+    // Calls inside `core` do not go through the mocked export, so the App installation lookup is faked here too.
+    getRepositoryInstallationId: async (_appId: string, _key: string, fullName: string) => {
+      const res = await makeGithubFetch(h.github)('app.jwt.token', `/repos/${fullName}/installation`);
+      return res.status === 404 ? null : ((await res.json()) as { id: number }).id;
+    },
+    checkRouting: async () => (h.dns.routingOk ? { ok: true, detail: 'CNAME points at Orb' } : { ok: false, detail: 'No CNAME record found' }),
+    verifyOwnership: async () => ({ ok: false, detail: 'No TXT record found' }),
+  };
 }
 
 // --- seeding -----------------------------------------------------------------------------------------------------------
