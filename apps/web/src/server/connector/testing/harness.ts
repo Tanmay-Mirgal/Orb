@@ -282,6 +282,39 @@ export async function linkGithub(h: Harness, userId: string, token = `gho_${user
   return token;
 }
 
+export async function seedProject(
+  h: Harness,
+  orgId: string,
+  userId: string,
+  overrides: Partial<typeof schema.projects.$inferInsert> & { repo?: string } = {},
+) {
+  const { repo, ...rest } = overrides;
+  const name = rest.name ?? 'Storefront';
+  const slug = rest.slug ?? `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${randomUUID().slice(0, 6)}`;
+  const [project] = await h.db.insert(schema.projects).values({ name, slug, userId, orgId, type: 'static', ...rest }).returning();
+  if (repo) {
+    await h.db.insert(schema.projectRepositories).values({ projectId: project!.id, githubRepositoryId: 1, githubRepositoryName: repo, branch: 'main' });
+  }
+  return project!;
+}
+
+export async function seedDeployment(h: Harness, projectId: string, overrides: Partial<typeof schema.deployments.$inferInsert> = {}) {
+  const id = overrides.id ?? randomUUID();
+  const [deployment] = await h.db
+    .insert(schema.deployments)
+    .values({ id, projectId, status: 'READY', environment: 'production', trigger: 'manual', branch: 'main', subdomain: `dep-${id.slice(0, 8)}`, ...overrides })
+    .returning();
+  return deployment!;
+}
+
+export async function seedDomain(h: Harness, projectId: string, domain: string, overrides: Partial<typeof schema.domains.$inferInsert> = {}) {
+  const [row] = await h.db.insert(schema.domains).values({ domain, projectId, verificationToken: 'tok', ...overrides }).returning();
+  return row!;
+}
+
+export const RESET_SQL =
+  'TRUNCATE connector_grants, connector_codes, connector_used_refresh, connector_webhooks, connector_events, connector_deliveries, connector_operations, connector_idempotency, audit_logs, projects, organizations, "user" CASCADE';
+
 export const HUB_ENV = {
   CONNECTOR_ENABLED: 'true',
   CONNECTOR_HUB_NAME: 'Test Hub',

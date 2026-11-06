@@ -155,7 +155,7 @@ export const logPageSchema = z.object({
 
 export const runtimeLogPageSchema = z.object({
   deploymentId: z.string().nullable(),
-  items: z.array(z.object({ id: z.string(), stream: z.string().optional(), text: z.string(), at: z.string().optional() })),
+  items: z.array(z.object({ id: z.string(), text: z.string() })),
   nextCursor: z.string().nullable(),
 });
 

@@ -24,3 +24,4 @@ export * from './env-resolver';
 export * from './domain-verify';
 export * from './notify';
 export * from './plan-grants';
+export * from './connector-entities';
