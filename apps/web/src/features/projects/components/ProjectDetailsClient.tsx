@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { api, errorMessage } from "@/lib/api-client";
 import { formatBytes, formatNumber, hostOf, projectUrl, shortSha, timeAgo, TYPE_LABEL } from "@/lib/format";
 import { Badge, StatusBadge } from "@/components/ui/badge";
+import { ViaHubBadge } from "./ViaHub";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -108,6 +109,7 @@ export function ProjectDetailsClient({ project, repository, role, registryLogin 
             <h1 className="truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
             <Badge variant="outline">{TYPE_LABEL[project.type] ?? project.type}</Badge>
             {active && <StatusBadge status={active.status} />}
+            <ViaHubBadge via={project.createdVia} />
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
             {isImage && (
@@ -330,6 +332,7 @@ function DeploymentsTab({ deployments, loaded, live, canDeploy, onAct, onOpen }:
                   <span className="truncate text-sm font-medium">{d.commitMessage ?? "Manual deployment"}</span>
                   {live?.id === d.id && <Badge variant="success">Live</Badge>}
                   {d.environment === "preview" && <Badge variant="info">Preview</Badge>}
+                  <ViaHubBadge via={d.createdVia} />
                 </span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
                   <span className="font-mono">{shortSha(d.commitHash)}</span> · {d.branch ?? "—"} · {d.trigger.replace("_", " ")} · {timeAgo(d.createdAt)}

@@ -770,6 +770,37 @@ orb exec postgres psql -U orb -d orb -c "insert into plan_grants (email, plan, e
 
 ---
 
+## 12c. Ecosystem connector (Hub) enable karna
+
+Ye feature **default me band** hai (`CONNECTOR_ENABLED=false`). Band rehne par koi naya route, table write, worker job ya extra query nahi chalti, to AWS cost par koi farak nahi. Enable karne par bhi cost almost zero hai: worker har 5 second me ek chhoti indexed query chalata hai aur ek ghante me ek cleanup job; naya server, queue service ya S3 bucket nahi chahiye.
+
+Poora protocol, curl examples aur event list: `docs/CONNECTOR.md`.
+
+**Enable karne ke steps**
+1. Secrets banao (har ek ke liye alag `openssl rand -hex 32`) aur server ke `.env` me daalo:
+   ```
+   CONNECTOR_ENABLED="true"
+   CONNECTOR_HUB_NAME="Hub"
+   CONNECTOR_HUB_CLIENT_ID="hub"
+   CONNECTOR_HUB_CLIENT_SECRET="<openssl rand -hex 32>"
+   CONNECTOR_HUB_REDIRECT_URIS="https://hub.<tumhara-domain>/connect/orb/callback"   # exact match, https
+   CONNECTOR_TOKEN_PEPPER="<openssl rand -hex 32>"
+   CONNECTOR_ENCRYPTION_KEY="<openssl rand -hex 32>"      # pepper se alag value
+   ```
+   Koi value missing ya chhoti hui to `web` aur `worker` start hi nahi honge aur message me batayenge kya galat hai.
+2. Migration `0005_connector` apne aap chalti hai: `orb up -d --build` (ya `npm run db:migrate`).
+3. **Web aur worker dono restart** karo. (Sirf web restart karoge to webhooks deliver nahi honge, kyunki dispatcher worker me chalta hai.)
+4. Check: `curl https://orb.<tumhara-domain>/.well-known/ecosystem-connector.json` JSON de, aur Settings me **Connected apps** tab dikhe.
+5. Hub ko `client id`, `client secret` aur discovery URL de do.
+
+**Dhyan rakho**
+- `CONNECTOR_TOKEN_PEPPER` badla to har connected app logout ho jaata hai (users ko dobara Allow karna padega).
+- `CONNECTOR_ENCRYPTION_KEY` badlo to purani key `CONNECTOR_ENCRYPTION_KEY_PREVIOUS` me rakho, warna purane webhook secrets padhe nahi jaayenge.
+- Band karna ho: `CONNECTOR_ENABLED="false"` + restart. Data tables me rehta hai.
+- `CONNECTOR_ALLOW_PRIVATE_WEBHOOKS` sirf local development ke liye hai, production me ignore hota hai.
+
+---
+
 ## 13. Troubleshooting
 
 | Dikkat | Kaaran / Fix |

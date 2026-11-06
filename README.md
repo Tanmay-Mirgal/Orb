@@ -331,6 +331,16 @@ curl -X POST -H "Authorization: Bearer orb_…" https://orb.example.com/api/v1/p
 
 Roles: **viewer** (read) · **member** (deploy, env) · **admin** (+ domains, promote/rollback, members, delete) · **owner** (+ delete team). Errors are `{ "error", "code" }` JSON; rate limits return `429` + `Retry-After`.
 
+**Ecosystem connector (CP1)** — an external *Hub* can connect to a team with a standards-based consent flow (OAuth 2.0 + PKCE), then create projects, trigger / cancel / promote deployments, manage env vars and domains, read logs and analytics, and receive signed webhooks (`deployment.ready`, `deployment.failed`, …) backed by a transactional outbox. It is **off unless `CONNECTOR_ENABLED=true`** and does not change `/api/v1/*` or personal API tokens.
+
+```bash
+curl https://orb.example.com/.well-known/ecosystem-connector.json          # discovery: actions, resources, events, schemas
+curl -H "Authorization: Bearer cp1_orb_…" https://orb.example.com/api/connect/v1/projects
+curl -X POST -H "Authorization: Bearer cp1_orb_…" -H "Idempotency-Key: run-42"   https://orb.example.com/api/connect/v1/actions/deployments.trigger -d '{"input":{"projectId":"<id>"}}'
+```
+
+Users manage connections in **Settings → Connected apps**. Setup, every action with `curl`, the event catalogue, security model and runbook: [`docs/CONNECTOR.md`](docs/CONNECTOR.md).
+
 ---
 
 ## 10. Scaling guide

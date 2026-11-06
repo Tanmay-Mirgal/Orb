@@ -20,7 +20,8 @@
     "db:migrate": "npm run migrate -w database",
     "db:encrypt-legacy": "npm run encrypt-legacy -w database",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "connector:smoke": "tsx scripts/connector-smoke.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
